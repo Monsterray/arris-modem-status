@@ -14,10 +14,46 @@ python -m pip install 'git+https://github.com/Monsterray/arris-modem-status.git@
 arris-modem-status --password-file /path/to/modem-password --quiet --timeout 30
 ```
 
-These fixes have automated coverage; live S33v2 compatibility and long-running
-modem stability have not yet been verified. For monitoring, keep one client open
-across polls; separate CLI invocations each create a new login session. The firmware
-test results below are inherited from upstream.
+The remaining type-check errors are also fixed. HNAP authentication now supports
+explicit `md5` and `sha256` firmware variants; SHA256 remains the library default.
+The firmware test results below are inherited from upstream. Live authenticated
+S33v2 compatibility and long-running modem stability have not yet been verified.
+
+### Conservative S33v2 sampling
+
+Open `https://192.168.100.1/Login.html` from a computer behind your router. Confirm
+the password with the modem's normal interface before using the script. Determine
+the hash algorithm by inspecting the public `js/Login.js` and `js/SOAP/SOAPAction.js`
+scripts: `hex_hmac_md5` means `md5`; `hex_hmac_sha256` means `sha256`. Firmware varies,
+so do not discover the algorithm by repeatedly attempting logins. A reported S33v2
+used MD5 and became stable after session-handling fixes in another monitor
+([report and follow-up](https://github.com/solentlabs/cable_modem_monitor/issues/117)).
+
+For MD5 firmware, collect one sample with a locally prompted password:
+
+```bash
+python -m arris_modem_status.cli.monitor --host 192.168.100.1 --hmac-algorithm md5 > modem-sample.jsonl
+```
+
+After confirming successful data collection, a bounded monitoring run is:
+
+```bash
+python -m arris_modem_status.cli.monitor --host 192.168.100.1 --hmac-algorithm md5 --samples 3 --interval 900 > modem-samples.jsonl
+```
+
+The monitor defaults to one sample and enforces at least 15 minutes between samples.
+It reuses one authenticated client, sends serial requests, disables request retries
+and performance-history accumulation, skips event-log queries, and exits on a failed
+or incomplete sample. It does not automatically reauthenticate or reboot the modem.
+If the session expires, stop and investigate before starting a new run. Ctrl-C stops
+sampling. An optional `--password-file` reads the first line of a local credential
+file; protect that file with owner-only permissions.
+
+Run only one collector and leave other modem scrapers disabled during validation.
+Separate CLI invocations each create a new login session, so avoid scheduling them
+as frequent cron jobs. Increasing the interval is a conservative choice, not a
+guarantee against firmware crashes. Check uptime and connection stability before
+extending the monitoring period.
 
 [![Quality Check](https://github.com/csmarshall/arris-modem-status/actions/workflows/quality-check.yml/badge.svg)](https://github.com/csmarshall/arris-modem-status/actions/workflows/quality-check.yml)
 [![codecov](https://codecov.io/gh/csmarshall/arris-modem-status/branch/main/graph/badge.svg)](https://codecov.io/gh/csmarshall/arris-modem-status)

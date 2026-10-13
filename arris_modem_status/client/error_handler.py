@@ -396,10 +396,7 @@ class ErrorAnalyzer:
                     try:
                         if hasattr(response, "content"):
                             content = response.content
-                            if isinstance(content, bytes):
-                                partial_content = str(content[:500])
-                            else:
-                                partial_content = str(content)[:500]
+                            partial_content = str(content[:500])
                         else:
                             partial_content = "Unable to extract content"
                     except Exception:

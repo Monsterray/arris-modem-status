@@ -128,14 +128,13 @@ Author: Charles Marshall
 License: MIT
 """
 
-import hashlib
 import hmac
 import json
 import logging
 import time
 from typing import Optional, Tuple
 
-from arris_modem_status.exceptions import ArrisParsingError
+from arris_modem_status.exceptions import ArrisConfigurationError, ArrisParsingError
 
 logger = logging.getLogger("arris-modem-status")
 
@@ -143,14 +142,18 @@ logger = logging.getLogger("arris-modem-status")
 class HNAPAuthenticator:
     """Handles HNAP authentication for Arris modems."""
 
-    def __init__(self, username: str, password: str):
+    def __init__(self, username: str, password: str, hmac_algorithm: str = "sha256"):
         """
         Initialize HNAP authenticator.
 
         Args:
             username: Login username
             password: Login password
+            hmac_algorithm: Firmware HNAP hash algorithm (sha256 or md5)
         """
+        if hmac_algorithm not in {"sha256", "md5"}:
+            raise ArrisConfigurationError("HNAP hash algorithm must be sha256 or md5")
+        self.hmac_algorithm = hmac_algorithm
         self.username = username
         self.password = password
         self.private_key: Optional[str] = None
@@ -218,7 +221,7 @@ class HNAPAuthenticator:
             hmac.new(
                 hmac_key.encode("utf-8"),
                 message.encode("utf-8"),
-                hashlib.sha256,
+                self.hmac_algorithm,
             )
             .hexdigest()
             .upper()
@@ -331,7 +334,7 @@ class HNAPAuthenticator:
             hmac.new(
                 key_material.encode("utf-8"),
                 challenge.encode("utf-8"),
-                hashlib.sha256,
+                self.hmac_algorithm,
             )
             .hexdigest()
             .upper()
@@ -342,7 +345,7 @@ class HNAPAuthenticator:
             hmac.new(
                 self.private_key.encode("utf-8"),
                 challenge.encode("utf-8"),
-                hashlib.sha256,
+                self.hmac_algorithm,
             )
             .hexdigest()
             .upper()

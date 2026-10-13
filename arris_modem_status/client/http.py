@@ -1109,7 +1109,7 @@ class HNAPRequestHandler:
                 # Handle HTTPError specifically
                 if isinstance(e, requests.exceptions.HTTPError):
                     status_code = None
-                    if hasattr(e, "response") and hasattr(e.response, "status_code"):
+                    if e.response is not None:
                         status_code = e.response.status_code
                     elif response_obj is not None and hasattr(response_obj, "status_code"):
                         status_code = response_obj.status_code

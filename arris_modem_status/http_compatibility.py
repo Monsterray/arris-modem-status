@@ -846,7 +846,9 @@ class ArrisCompatibleHTTPAdapter(HTTPAdapter):
 
         # For non-HNAP endpoints, use standard urllib3 processing
         try:
-            response = super().send(request, stream, timeout, verify, cert, proxies)
+            response = super().send(
+                request, stream, timeout, verify, cert, dict(proxies) if proxies is not None else None
+            )
 
             if self.instrumentation:
                 response_size = len(response.content) if hasattr(response, "content") else 0
@@ -1130,7 +1132,8 @@ class ArrisCompatibleHTTPAdapter(HTTPAdapter):
         # Add headers, but skip Content-Length as we'll calculate it ourselves
         for name, value in request.headers.items():
             if name.lower() != "content-length":  # Skip Content-Length
-                lines.append(f"{name}: {value}")
+                header_value = value.decode("latin-1") if isinstance(value, bytes) else value
+                lines.append(f"{name}: {header_value}")
 
         # Add body length if present
         if request.body:

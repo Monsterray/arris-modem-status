@@ -117,6 +117,7 @@ class ArrisModemStatusClient:
         capture_errors: bool = True,
         timeout: tuple = (3, 12),
         enable_instrumentation: bool = True,
+        hmac_algorithm: str = "sha256",
     ):
         """
         Initialize the Arris modem client with HTTP compatibility and instrumentation.
@@ -134,6 +135,7 @@ class ArrisModemStatusClient:
             capture_errors: Whether to capture error details for analysis (default: True)
             timeout: (connect_timeout, read_timeout) in seconds (default: (3, 12))
             enable_instrumentation: Enable detailed performance instrumentation (default: True)
+            hmac_algorithm: Firmware HNAP hash algorithm (sha256 or md5)
         """
         self.host = host
         self.port = port
@@ -149,7 +151,7 @@ class ArrisModemStatusClient:
         self.enable_instrumentation = enable_instrumentation
 
         # Initialize components
-        self.authenticator = HNAPAuthenticator(username, password)
+        self.authenticator = HNAPAuthenticator(username, password, hmac_algorithm)
         self.error_analyzer = ErrorAnalyzer(capture_errors)
         self.parser = HNAPResponseParser()
         self.instrumentation = PerformanceInstrumentation() if enable_instrumentation else None
@@ -365,9 +367,12 @@ class ArrisModemStatusClient:
                 details={"error_type": type(e).__name__, "error": str(e)},
             ) from e
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self, include_logs: bool = True) -> dict[str, Any]:
         """
         Retrieve comprehensive modem status using relaxed HTTP parsing.
+
+        Args:
+            include_logs: Fetch event logs along with status (default: True)
 
         Returns:
             Dictionary containing modem status information
@@ -429,6 +434,8 @@ class ArrisModemStatusClient:
             ]
 
             responses: dict[str, str] = {}
+            if not include_logs:
+                request_definitions = [item for item in request_definitions if item[0] != "system_log"]
             successful_requests = 0
 
             if self.concurrent:
