@@ -382,7 +382,11 @@ class HNAPAuthenticator:
         Returns:
             True if login successful, False otherwise
         """
-        if response_text and any(term in response_text.lower() for term in ["success", "ok", "true"]):
-            self.authenticated = True
-            return True
-        return False
+        self.authenticated = False
+        try:
+            data = json.loads(response_text)
+            result = data["LoginResponse"]["LoginResult"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return False
+        self.authenticated = isinstance(result, str) and result.upper() in {"SUCCESS", "OK", "TRUE"}
+        return self.authenticated

@@ -53,8 +53,8 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
         client_class = ArrisModemStatusClient
 
     # Get optimal timeouts based on host type
-    connect_timeout, read_timeout = get_optimal_timeouts(args.host)
-    final_timeout = (connect_timeout, min(args.timeout, read_timeout))
+    connect_timeout, _ = get_optimal_timeouts(args.host)
+    final_timeout = (min(connect_timeout, args.timeout), args.timeout)
 
     logger.info(f"Initializing ArrisModemStatusClient for {args.host}:{args.port}")
 
@@ -68,7 +68,7 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
             with open(args.password_file) as handle:
                 password = handle.readline().strip()
         else:
-            print(f"❌ Password file {args.password_file} does not exist")
+            print(f"❌ Password file {args.password_file} does not exist", file=sys.stderr)
             sys.exit(1)
     if args.password is not None:
         password = args.password

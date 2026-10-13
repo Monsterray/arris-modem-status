@@ -780,7 +780,7 @@ class TestCLIHelperFunctions:
             concurrent=False,  # Based on parallel=False
             max_workers=2,
             max_retries=3,
-            timeout=(2, 8),  # Based on local IP
+            timeout=(2, 30),  # Local connect timeout and requested read timeout
         )
 
     def test_perform_connectivity_check_not_requested(self):

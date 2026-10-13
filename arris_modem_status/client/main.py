@@ -231,6 +231,10 @@ class ArrisModemStatusClient:
             ArrisTimeoutError: When timeout occurs during authentication
         """
         try:
+            self.authenticated = False
+            self.private_key = None
+            self.uid_cookie = None
+            self.session.cookies.clear()
             logger.info("🔐 Starting authentication...")
             start_time = (
                 self.instrumentation.start_timer("authentication_complete") if self.instrumentation else time.time()
@@ -294,7 +298,10 @@ class ArrisModemStatusClient:
             login_request = self.authenticator.build_login_request(login_password)
             login_headers = {"Cookie": f"uid={self.authenticator.uid_cookie}"} if self.authenticator.uid_cookie else {}
 
-            login_response = self.request_handler.make_request_with_retry("Login", login_request, login_headers)
+            login_auth_token = self.authenticator.generate_auth_token("Login")
+            login_response = self.request_handler.make_request_with_retry(
+                "Login", login_request, login_headers, auth_token=login_auth_token
+            )
 
             if login_response and self.authenticator.validate_login_response(login_response):
                 auth_time = time.time() - start_time

@@ -1,5 +1,24 @@
 # arris-modem-status 🚀
 
+## Monsterray fork
+
+This fork fixes reproducible authentication and CLI bugs: signed login requests,
+exact login-result validation, cleared authentication state before reauthentication,
+honored request timeouts, and password-file errors on stderr. Regression tests also
+verify that repeated status polls reuse the authenticated client session.
+
+Install the fixes from the working branch:
+
+```bash
+python -m pip install 'git+https://github.com/Monsterray/arris-modem-status.git@fix/authentication-and-cli'
+arris-modem-status --password-file /path/to/modem-password --quiet --timeout 30
+```
+
+These fixes have automated coverage; live S33v2 compatibility and long-running
+modem stability have not yet been verified. For monitoring, keep one client open
+across polls; separate CLI invocations each create a new login session. The firmware
+test results below are inherited from upstream.
+
 [![Quality Check](https://github.com/csmarshall/arris-modem-status/actions/workflows/quality-check.yml/badge.svg)](https://github.com/csmarshall/arris-modem-status/actions/workflows/quality-check.yml)
 [![codecov](https://codecov.io/gh/csmarshall/arris-modem-status/branch/main/graph/badge.svg)](https://codecov.io/gh/csmarshall/arris-modem-status)
 [![PyPI version](https://badge.fury.io/py/arris-modem-status.svg)](https://badge.fury.io/py/arris-modem-status)
