@@ -49,6 +49,14 @@ If the session expires, stop and investigate before starting a new run. Ctrl-C s
 sampling. An optional `--password-file` reads the first line of a local credential
 file; protect that file with owner-only permissions.
 
+Passwords are literal Unicode text: `$`, `@`, `!`, quotes, backslashes, and leading
+or trailing spaces are preserved. At the interactive password prompt, type the
+password exactly as it is; do not add shell quotes or escape characters. UTF-8
+password files preserve spaces and punctuation and remove only the first line's
+line ending. The first-line format does not represent multiline passwords.
+Avoid placing passwords directly in shell commands, where the shell can expand
+characters before Python receives them and may save them in command history.
+
 Run only one collector and leave other modem scrapers disabled during validation.
 Separate CLI invocations each create a new login session, so avoid scheduling them
 as frequent cron jobs. Increasing the interval is a conservative choice, not a

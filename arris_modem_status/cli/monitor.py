@@ -42,7 +42,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         parser.error("samples must be positive and interval must be at least 900 seconds")
     try:
         if args.password_file:
-            with args.password_file.open() as handle:
+            with args.password_file.open(encoding="utf-8") as handle:
                 password = handle.readline().rstrip("\r\n")
         else:
             password = getpass("Modem admin password: ")

@@ -65,8 +65,8 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
     password = os.environ.get("ARRIS_PW", None)
     if args.password_file is not None:
         if args.password_file.exists():
-            with open(args.password_file) as handle:
-                password = handle.readline().strip()
+            with open(args.password_file, encoding="utf-8") as handle:
+                password = handle.readline().rstrip("\r\n")
         else:
             print(f"❌ Password file {args.password_file} does not exist", file=sys.stderr)
             sys.exit(1)
