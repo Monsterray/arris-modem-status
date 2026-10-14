@@ -1,0 +1,20 @@
+[
+  {
+    "password": "Test$@!123",
+    "key": "320140AFCE77AE213BECC83E0043D82C",
+    "login": "3F93F69A4A17EEB452BB9FA95DD3203A",
+    "token": "DA920A934AC9AF6FC353AED6EC903D4B 123"
+  },
+  {
+    "password": "  $@! café🔒  ",
+    "key": "35F27142E94C1F0556CCE8743A87B0D7",
+    "login": "5964180B4B2593781F62E0CF594075F4",
+    "token": "1783EE19830317F2475E69383B93FF60 123"
+  },
+  {
+    "password": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "key": "3436402059E2A852C0FD8B31D731FFAF",
+    "login": "FA61F8FBBEAB49674BB90189BB33F64E",
+    "token": "4A54A45CD7FB522515312039F2D7601A 123"
+  }
+]

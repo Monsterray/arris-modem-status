@@ -35,6 +35,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--host", default="192.168.100.1")
     parser.add_argument("--hmac-algorithm", required=True, choices=("md5", "sha256"))
     parser.add_argument("--password-file", type=Path)
+    parser.add_argument(
+        "--relaxed-http", action="store_true", help="Use legacy raw-socket parsing for incompatible firmware"
+    )
     parser.add_argument("--samples", type=int, default=1)
     parser.add_argument("--interval", type=int, default=900, help="Seconds between samples; minimum 900")
     args = parser.parse_args(argv)
@@ -55,6 +58,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             concurrent=False,
             max_retries=0,
             enable_instrumentation=False,
+            relaxed_http=args.relaxed_http,
         ) as client:
             poll(client, args.samples, args.interval)
     except (ArrisModemError, OSError, EOFError) as error:

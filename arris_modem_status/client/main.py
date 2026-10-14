@@ -12,6 +12,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
+import requests
+
 from arris_modem_status.client.auth import HNAPAuthenticator
 from arris_modem_status.client.error_handler import ErrorAnalyzer
 from arris_modem_status.client.http import HNAPRequestHandler
@@ -118,6 +120,7 @@ class ArrisModemStatusClient:
         timeout: tuple = (3, 12),
         enable_instrumentation: bool = True,
         hmac_algorithm: str = "sha256",
+        relaxed_http: bool = False,
     ):
         """
         Initialize the Arris modem client with HTTP compatibility and instrumentation.
@@ -136,6 +139,7 @@ class ArrisModemStatusClient:
             timeout: (connect_timeout, read_timeout) in seconds (default: (3, 12))
             enable_instrumentation: Enable detailed performance instrumentation (default: True)
             hmac_algorithm: Firmware HNAP hash algorithm (sha256 or md5)
+            relaxed_http: Opt into custom raw-socket HTTP parsing (default: False)
         """
         self.host = host
         self.port = port
@@ -149,6 +153,7 @@ class ArrisModemStatusClient:
         self.capture_errors = capture_errors
         self.timeout = timeout
         self.enable_instrumentation = enable_instrumentation
+        self.relaxed_http = relaxed_http
 
         # Initialize components
         self.authenticator = HNAPAuthenticator(username, password, hmac_algorithm)
@@ -157,7 +162,16 @@ class ArrisModemStatusClient:
         self.instrumentation = PerformanceInstrumentation() if enable_instrumentation else None
 
         # Configure HTTP session with relaxed parsing for HNAP endpoints
-        self.session = create_arris_compatible_session(self.instrumentation)
+        self.session = create_arris_compatible_session(self.instrumentation, relaxed_http=relaxed_http)
+        origin = f"https://{host}" + (f":{port}" if port != 443 else "")
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json, text/plain, */*",
+                "Origin": origin,
+                "X-Requested-With": "XMLHttpRequest",
+            }
+        )
 
         # Initialize request handler
         self.request_handler = HNAPRequestHandler(
@@ -172,7 +186,7 @@ class ArrisModemStatusClient:
         mode_str = "concurrent" if concurrent else "serial"
         logger.info(f"🛡️ ArrisModemStatusClient v1.0.0 initialized for {host}:{port}")
         logger.info(f"🔧 Mode: {mode_str}, Workers: {self.max_workers}, Retries: {max_retries}")
-        logger.info("🔧 Using relaxed HTTP parsing for HNAP endpoints")
+        logger.info("🔧 HTTP transport: %s", "relaxed" if relaxed_http else "standard")
         if not concurrent:
             logger.info("📌 Using serial mode for maximum compatibility (recommended)")
         else:
@@ -241,6 +255,18 @@ class ArrisModemStatusClient:
             start_time = (
                 self.instrumentation.start_timer("authentication_complete") if self.instrumentation else time.time()
             )
+
+            # Seed browser cookies before the challenge; no credentials are sent.
+            try:
+                login_page = self.session.get(
+                    f"{self.base_url}/Login.html", timeout=self.timeout, allow_redirects=False
+                )
+            except requests.exceptions.Timeout as error:
+                raise ArrisTimeoutError("Modem login page timed out; no login was attempted") from error
+            except requests.exceptions.RequestException as error:
+                raise ArrisConnectionError("Could not reach modem login page; no login was attempted") from error
+            if login_page.status_code != 200:
+                raise ArrisHTTPError("Could not load modem login page", status_code=login_page.status_code)
 
             # Step 1: Request challenge
             challenge_start = (

@@ -262,7 +262,6 @@ import urllib3
 from requests.adapters import HTTPAdapter
 from requests.models import Response
 from urllib3.exceptions import InsecureRequestWarning
-from urllib3.util.retry import Retry
 
 try:
     from arris_modem_status import __version__
@@ -1427,7 +1426,9 @@ class ArrisCompatibleHTTPAdapter(HTTPAdapter):
             return response
 
 
-def create_arris_compatible_session(instrumentation: Optional[Any] = None) -> requests.Session:
+def create_arris_compatible_session(
+    instrumentation: Optional[Any] = None, relaxed_http: bool = True
+) -> requests.Session:
     """
     Create a requests Session optimized for maximum Arris modem compatibility and reliability.
 
@@ -1671,22 +1672,11 @@ def create_arris_compatible_session(instrumentation: Optional[Any] = None) -> re
     """
     session = requests.Session()
 
-    # Conservative retry strategy
-    retry_strategy = Retry(
-        total=2,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["POST", "GET"],
-        backoff_factor=0.3,
-        respect_retry_after_header=False,
-    )
-
-    # Use the Arris-compatible adapter with relaxed parsing
-    adapter = ArrisCompatibleHTTPAdapter(
-        instrumentation=instrumentation,
-        pool_connections=1,
-        pool_maxsize=5,
-        max_retries=retry_strategy,
-        pool_block=False,
+    # Only the request handler controls retries; adapters must not repeat logins.
+    adapter = (
+        ArrisCompatibleHTTPAdapter(instrumentation=instrumentation, max_retries=0)
+        if relaxed_http
+        else HTTPAdapter(max_retries=0)
     )
 
     session.mount("https://", adapter)
@@ -1694,6 +1684,7 @@ def create_arris_compatible_session(instrumentation: Optional[Any] = None) -> re
 
     # Session configuration
     session.verify = False
+    session.trust_env = False
     session.headers.update(
         {
             "User-Agent": "ArrisModemStatusClient/{__version__}-Compatible",

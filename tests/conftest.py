@@ -5,6 +5,14 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def mock_login_page(monkeypatch):
+    """Keep authentication unit tests offline while simulating the public login page."""
+    get = Mock(return_value=Mock(status_code=200))
+    monkeypatch.setattr("requests.Session.get", get)
+    return get
+
+
 @pytest.fixture
 def mock_modem_responses():
     """Fixture providing comprehensive mock modem responses."""

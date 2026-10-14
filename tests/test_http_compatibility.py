@@ -657,13 +657,13 @@ class TestHttpCompatibilityIntegration:
         if "total_errors" in analysis:
             assert analysis.get("http_compatibility_issues", 0) == 0
 
-    def test_client_uses_relaxed_parsing_by_default(self):
-        """Test that client uses relaxed parsing for HNAP endpoints."""
+    def test_client_uses_standard_http_by_default(self):
+        """Use the transport verified against the physical S33v2 by default."""
         client = ArrisModemStatusClient(password="test")
 
-        # Check that the session adapter is ArrisCompatibleHTTPAdapter
+        # Raw-socket parsing remains available through relaxed_http=True.
         adapter = client.session.get_adapter("https://192.168.100.1/HNAP1/")
-        assert isinstance(adapter, ArrisCompatibleHTTPAdapter)
+        assert type(adapter) is requests.adapters.HTTPAdapter
 
     def test_error_classification_without_header_parsing(self):
         """Test error classification for various error types."""
