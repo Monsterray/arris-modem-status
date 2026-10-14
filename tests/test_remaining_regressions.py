@@ -2,6 +2,7 @@
 
 import hashlib
 import hmac
+import json as jsonlib
 from unittest.mock import Mock
 
 import pytest
@@ -11,6 +12,29 @@ from arris_modem_status.client.auth import HNAPAuthenticator
 from arris_modem_status.client.http import HNAPRequestHandler
 from arris_modem_status.exceptions import ArrisHTTPError
 from arris_modem_status.http_compatibility import ArrisCompatibleHTTPAdapter
+
+
+def test_md5_login_sends_browser_session_cookies(mock_modem_responses, monkeypatch):
+    """The modem browser sends both cookies before the second login POST."""
+    from arris_modem_status import ArrisModemStatusClient
+
+    with ArrisModemStatusClient(password="test", hmac_algorithm="md5", max_retries=0) as client:
+        login_count = 0
+
+        def modem_post(url, *, json, headers, timeout):
+            nonlocal login_count
+            login_count += 1
+            if json["Login"]["Action"] == "request":
+                return Mock(status_code=200, text=mock_modem_responses["challenge_response"])
+            challenge = jsonlib.loads(mock_modem_responses["challenge_response"])["LoginResponse"]
+            key = hmac.new((challenge["PublicKey"] + "test").encode(), challenge["Challenge"].encode(), "md5")
+            cookie = f'uid={challenge["Cookie"]}; PrivateKey={key.hexdigest().upper()}'
+            result = "SUCCESS" if headers.get("Cookie") == cookie else "FAILED"
+            return Mock(status_code=200, text=jsonlib.dumps({"LoginResponse": {"LoginResult": result}}))
+
+        monkeypatch.setattr(client.session, "post", modem_post)
+        assert client.authenticate()
+        assert login_count == 2
 
 
 def test_http_error_without_response_keeps_status(monkeypatch):

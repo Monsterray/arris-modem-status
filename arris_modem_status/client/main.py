@@ -298,11 +298,14 @@ class ArrisModemStatusClient:
             )
 
             login_request = self.authenticator.build_login_request(login_password)
-            login_headers = {"Cookie": f"uid={self.authenticator.uid_cookie}"} if self.authenticator.uid_cookie else {}
-
             login_auth_token = self.authenticator.generate_auth_token("Login")
             login_response = self.request_handler.make_request_with_retry(
-                "Login", login_request, login_headers, auth_token=login_auth_token
+                "Login",
+                login_request,
+                auth_token=login_auth_token,
+                authenticated=True,
+                uid_cookie=self.uid_cookie,
+                private_key=self.private_key,
             )
 
             if login_response and self.authenticator.validate_login_response(login_response):
@@ -316,7 +319,7 @@ class ArrisModemStatusClient:
 
                 return True
 
-            logger.error("Authentication failed after retries")
+            logger.error("Modem rejected login; no further login attempt will be made by this call")
 
             if self.instrumentation:
                 self.instrumentation.record_timing(
