@@ -21,8 +21,9 @@ def test_md5_login_sends_browser_session_cookies(mock_modem_responses, monkeypat
     with ArrisModemStatusClient(password="test", hmac_algorithm="md5", max_retries=0) as client:
         login_count = 0
 
-        def modem_post(url, *, json, headers, timeout):
+        def modem_post(url, *, json, headers, timeout, allow_redirects):
             nonlocal login_count
+            assert not allow_redirects
             login_count += 1
             if json["Login"]["Action"] == "request":
                 return Mock(status_code=200, text=mock_modem_responses["challenge_response"])
@@ -85,7 +86,9 @@ def test_monitor_reuses_client_and_stops_on_partial_data(monkeypatch, capsys):
     with pytest.raises(ArrisOperationError, match="Incomplete"):
         poll(client, samples=10, interval=900)
     assert client.get_status.call_count == 2
-    assert all(call.kwargs == {"include_logs": False} for call in client.get_status.call_args_list)
+    assert all(
+        call.kwargs == {"include_logs": False, "channels_only": False} for call in client.get_status.call_args_list
+    )
     sleep.assert_called_once_with(900)
     assert capsys.readouterr().out == '{"sample": 1}\n'
 
@@ -123,7 +126,7 @@ def test_monitor_auth_failure_does_not_retry(monkeypatch, capsys):
     monkeypatch.setattr("arris_modem_status.cli.monitor.ArrisModemStatusClient", factory)
     monkeypatch.setattr("arris_modem_status.cli.monitor.getpass", lambda _: "local-test-password")
     assert main(["--hmac-algorithm", "md5", "--samples", "3"]) == 1
-    client.get_status.assert_called_once_with(include_logs=False)
+    client.get_status.assert_called_once_with(include_logs=False, channels_only=False)
     assert factory.call_args.kwargs["max_retries"] == 0
     assert factory.call_args.kwargs["concurrent"] is False
     assert factory.call_args.kwargs["enable_instrumentation"] is False

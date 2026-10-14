@@ -781,6 +781,8 @@ class TestCLIHelperFunctions:
             max_workers=2,
             max_retries=3,
             timeout=(2, 30),  # Local connect timeout and requested read timeout
+            hmac_algorithm="sha256",
+            relaxed_http=False,
         )
 
     def test_perform_connectivity_check_not_requested(self):

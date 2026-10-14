@@ -6,6 +6,18 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def block_network_connections(monkeypatch):
+    """Automated tests must never contact a physical modem or external service."""
+
+    def denied(*args, **kwargs):
+        pytest.fail("Network I/O is forbidden in automated tests; mock the transport")
+
+    monkeypatch.setattr("socket.socket.connect", denied)
+    monkeypatch.setattr("socket.socket.connect_ex", denied)
+    monkeypatch.setattr("socket.getaddrinfo", denied)
+
+
+@pytest.fixture(autouse=True)
 def mock_login_page(monkeypatch):
     """Keep authentication unit tests offline while simulating the public login page."""
     get = Mock(return_value=Mock(status_code=200))

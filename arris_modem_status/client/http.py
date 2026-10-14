@@ -307,6 +307,8 @@ from typing import Any, Optional
 import requests
 
 from arris_modem_status.exceptions import (
+    ArrisAuthenticationError,
+    ArrisConnectionError,
     ArrisHTTPError,
     ArrisTimeoutError,
     wrap_connection_error,
@@ -1024,12 +1026,13 @@ class HNAPRequestHandler:
             needing to understand the underlying HTTP and HNAP protocol details.
         """
         result = None
+        retry_limit = 0 if soap_action == "Login" else self.max_retries
 
-        for attempt in range(self.max_retries + 1):
+        for attempt in range(retry_limit + 1):
             try:
                 if attempt > 0:
                     backoff_time = self._exponential_backoff(attempt - 1)
-                    logger.info(f"🔄 Retry {attempt}/{self.max_retries} for {soap_action} after {backoff_time:.2f}s")
+                    logger.info(f"🔄 Retry {attempt}/{retry_limit} for {soap_action} after {backoff_time:.2f}s")
                     time.sleep(backoff_time)
 
                 response = self._make_raw_request(
@@ -1065,7 +1068,7 @@ class HNAPRequestHandler:
                 )
 
                 # If it's a timeout and we've exhausted retries, raise TimeoutError
-                if is_timeout and attempt >= self.max_retries:
+                if is_timeout and attempt >= retry_limit:
                     raise ArrisTimeoutError(
                         f"Request to {soap_action} timed out",
                         details={"operation": soap_action, "attempt": attempt + 1, "timeout": self.timeout},
@@ -1073,7 +1076,7 @@ class HNAPRequestHandler:
 
                 # Handle ConnectionError
                 if isinstance(e, requests.exceptions.ConnectionError):
-                    if attempt < self.max_retries:
+                    if attempt < retry_limit:
                         logger.debug(f"🔧 Connection error, attempt {attempt + 1}")
                         continue
                     host = self.base_url.split("://")[1].split(":")[0]
@@ -1103,7 +1106,10 @@ class HNAPRequestHandler:
                         raise ArrisHTTPError(
                             f"HTTP {status_code} error for {soap_action}",
                             status_code=status_code,
-                            details={"operation": soap_action, "response_text": response_text},
+                            details={
+                                "operation": soap_action,
+                                "response_text": "<redacted>" if soap_action == "Login" else response_text,
+                            },
                         ) from e
 
                 # Handle HTTPError specifically
@@ -1140,14 +1146,17 @@ class HNAPRequestHandler:
                         raise ArrisHTTPError(
                             f"HTTP {status_code} error for {soap_action}",
                             status_code=status_code,
-                            details={"operation": soap_action, "response_text": str(e)[:500]},
+                            details={
+                                "operation": soap_action,
+                                "response_text": "<redacted>" if soap_action == "Login" else str(e)[:500],
+                            },
                         ) from e
 
                 # For network/timeout errors, check if we should retry
                 if is_network_error:
                     logger.debug(f"🔧 Network error, attempt {attempt + 1}")
 
-                    if attempt < self.max_retries:
+                    if attempt < retry_limit:
                         continue
                     # For connection errors at the end, raise ArrisConnectionError
                     if isinstance(e, requests.exceptions.ConnectionError) and not is_timeout:
@@ -1158,6 +1167,8 @@ class HNAPRequestHandler:
                     # Re-raise non-retryable errors
                     raise
 
+            except (ArrisAuthenticationError, ArrisConnectionError, ArrisTimeoutError):
+                raise
             except Exception as e:
                 # IMPORTANT: Also capture unexpected errors
                 if hasattr(self, "error_analyzer") and self.error_analyzer:
@@ -1452,6 +1463,7 @@ class HNAPRequestHandler:
                 json=request_body,
                 headers=headers,
                 timeout=self.timeout,
+                allow_redirects=False,
             )
 
             if response.status_code == 200:
@@ -1481,13 +1493,31 @@ class HNAPRequestHandler:
                     http_status=response.status_code,
                 )
 
+            if response.status_code in {301, 302, 303, 307, 308}:
+                raise ArrisAuthenticationError(
+                    "Modem redirected HNAP request; stopped without following it",
+                    details={"operation": soap_action, "status_code": response.status_code},
+                )
+            if (
+                authenticated
+                and soap_action in {"Login", "GetMultipleHNAPs", "GetCustomerStatusSoftware"}
+                and response.status_code in {401, 403}
+            ):
+                raise ArrisAuthenticationError(
+                    f"Modem denied authenticated request (HTTP {response.status_code}); stopped without logging in again",
+                    details={"operation": soap_action, "status_code": response.status_code},
+                )
+
             raise ArrisHTTPError(
                 f"HTTP {response.status_code} response from modem",
                 status_code=response.status_code,
-                details={"operation": soap_action, "response_text": response.text[:500]},
+                details={
+                    "operation": soap_action,
+                    "response_text": "<redacted>" if soap_action == "Login" else response.text[:500],
+                },
             )
 
-        except ArrisHTTPError:
+        except (ArrisHTTPError, ArrisAuthenticationError):
             # Re-raise our custom exceptions
             raise
         except Exception as e:

@@ -60,6 +60,32 @@ If the session expires, stop and investigate before starting a new run. Ctrl-C s
 sampling. An optional `--password-file` reads the first line of a local credential
 file; protect that file with owner-only permissions.
 
+For lower-load signal collection, add `--channels-only`. It fetches downstream
+and upstream channels together in one status request instead of four; software,
+startup, registration, and event-log queries are omitted. Fields supplied only by
+those metadata queries may show `Unknown` in this mode.
+
+```bash
+python -m arris_modem_status.cli.monitor --hmac-algorithm md5 --password-file modem_pass --channels-only
+```
+
+The standard `arris-modem-status` entry point also supports `--hmac-algorithm`,
+`--channels-only`, and `--relaxed-http`. Confirm the firmware's hash algorithm
+before using either entry point; the standard CLI retains SHA256 as its default.
+
+Login POSTs are attempted once even when status retries are configured. HNAP
+redirects are refused. A rejected session, malformed challenge, or uncertain login
+result blocks further authentication on that client and discards its session keys
+and cookies. After checking the modem, explicitly create a new client to proceed;
+do not wrap authentication failure in an automatic process-restart loop. A status
+connection failure preserves the existing session and stops the query batch.
+In concurrent mode, queued work is cancelled; requests already in flight may finish.
+
+Authentication errors report recognized outcome codes instead of response bodies
+that might contain session secrets. Connectivity errors give connectivity guidance.
+The automated test suite blocks unmocked TCP connections and DNS lookups, so it
+cannot query the physical modem accidentally.
+
 Passwords are literal Unicode text: `$`, `@`, `!`, quotes, backslashes, and leading
 or trailing spaces are preserved. At the interactive password prompt, type the
 password exactly as it is; do not add shell quotes or escape characters. UTF-8

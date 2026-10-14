@@ -159,6 +159,7 @@ class HNAPAuthenticator:
         self.private_key: Optional[str] = None
         self.uid_cookie: Optional[str] = None
         self.authenticated: bool = False
+        self.last_login_result: Optional[str] = None
 
     def generate_auth_token(self, soap_action: str, timestamp: Optional[int] = None) -> str:
         """
@@ -273,14 +274,18 @@ class HNAPAuthenticator:
             challenge = login_resp["Challenge"]
             public_key = login_resp["PublicKey"]
             uid_cookie = login_resp.get("Cookie")
+            if not all(isinstance(value, str) and value for value in (challenge, public_key)):
+                raise ValueError("Challenge and PublicKey must be nonempty strings")
+            if uid_cookie is not None and not isinstance(uid_cookie, str):
+                raise ValueError("Cookie must be a string when present")
 
             return challenge, public_key, uid_cookie
 
-        except (json.JSONDecodeError, KeyError) as e:
+        except (ValueError, KeyError, TypeError) as e:
             logger.error(f"Challenge parsing failed: {e}")
             raise ArrisParsingError(
                 "Failed to parse authentication challenge response",
-                details={"phase": "challenge", "parse_error": str(e), "response": response_text[:200]},
+                details={"phase": "challenge", "parse_error": str(e), "response_length": len(response_text)},
             ) from e
 
     def compute_credentials(self, challenge: str, public_key: str) -> str:
@@ -386,10 +391,18 @@ class HNAPAuthenticator:
             True if login successful, False otherwise
         """
         self.authenticated = False
+        self.last_login_result = None
         try:
             data = json.loads(response_text)
             result = data["LoginResponse"]["LoginResult"]
         except (json.JSONDecodeError, KeyError, TypeError):
             return False
-        self.authenticated = isinstance(result, str) and result.upper() in {"SUCCESS", "OK", "TRUE"}
+        if isinstance(result, str):
+            normalized = result.upper()
+            self.last_login_result = (
+                normalized
+                if normalized in {"SUCCESS", "OK", "TRUE", "FAILED", "RELOAD", "REBOOT", "LOCKUP", "OK_CHANGED"}
+                else "UNRECOGNIZED"
+            )
+        self.authenticated = self.last_login_result in {"SUCCESS", "OK", "TRUE"}
         return self.authenticated

@@ -131,6 +131,40 @@ Use Home Assistant or DOCSight integration as optional consumers rather than dup
 
 Document model/hardware/firmware and ISP combinations actually tested, alongside the transport, hash algorithm and sanitized fixture provenance. Retain MD5/SHA256 profiles but select them from firmware evidence or explicit configuration. Keep readable release notes and CI for protocol vectors, parsers, CLI JSON and type checking. Avoid generic protocol plugins, transport workarounds or secret-rich debug dumps until a reproducible device issue demands them.
 
+## Reliability pass: 2026-10-14
+
+The user reported the browser page opens. A bounded probe from the execution runtime
+still timed out loading the public login page, before any challenge or credential POST.
+A direct TCP check to port 443 and anonymous curl probes to HTTP/HTTPS also timed out.
+This does not establish that the user's browser is failing or that the modem is down;
+the browser/runtime access difference remains unresolved. No further credential
+submissions were made during this pass.
+
+Reproducible offline cases led to these implemented safeguards:
+
+- HNAP login requests never retry, regardless of the configured status retry limit.
+- HNAP redirects cannot replay a POST at a different URL.
+- Rejected or uncertain authentication is latched until a new client is created;
+  private keys and session cookies are cleared.
+- An authenticated HTTP 401/403 response stops the batch instead of being silently
+  treated as an optional missing field. This is a conservative denial policy, not
+  proof that every 403 means session expiry.
+- Serial queries stop on connection loss while retaining the valid cached session.
+  Queued concurrent work is cancelled; already-running requests may complete.
+- Authentication diagnostics omit cookie-bearing response bodies and unknown raw
+  login-result strings; debug arguments omit passwords.
+- The monitor distinguishes connectivity from authentication failures.
+- `channels_only=True` / `--channels-only` selects the existing combined downstream
+  and upstream request, reducing status-query count from four to one. Metadata may
+  be unavailable in this mode. It is explicit selection, not an automatic fallback.
+- The ordinary CLI now exposes firmware hash and transport selection, matching the
+  monitor's explicit configuration.
+- Automated tests refuse unmocked TCP connections and DNS lookups. An inherited test
+  patched an obsolete helper; its mock was corrected to exercise the actual path.
+
+The channel-only protocol shape and failure policies have offline regression coverage.
+A complete live sample and long-running modem stability remain unverified.
+
 ## Commit inventory
 
 | Repository | Inspected commit |

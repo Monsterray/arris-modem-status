@@ -170,7 +170,7 @@ class TestClientErrorPaths:
         client = ArrisModemStatusClient(password="test")
         client.authenticated = True
 
-        with patch.object(client, "_make_hnap_request_with_retry") as mock_request:
+        with patch.object(client, "_process_serial_requests") as mock_request:
             # Raise unexpected error
             mock_request.side_effect = RuntimeError("Unexpected error in status")
 

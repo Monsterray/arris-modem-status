@@ -47,9 +47,17 @@ Monitoring Integration:
   Use --quiet to suppress stderr output and get pure JSON on stdout.
 
 HTTP Compatibility:
-  The client automatically handles urllib3 parsing strictness issues with
-  some Arris modem responses by falling back to browser-compatible parsing.
-  All compatibility issues are gracefully handled with smart retry logic.
+  Standard HTTP is the default. Use --relaxed-http for firmware that requires
+  legacy raw-socket parsing. --retries controls status queries; login requests
+  are attempted once and HNAP redirects are refused.
+
+Firmware Authentication:
+  Select the algorithm required by your firmware with --hmac-algorithm.
+  Older S33v2 firmware uses md5; sha256 remains the default for compatibility.
+
+Signal Sampling:
+  Use --channels-only for both channel directions in one request.
+  This omits metadata and event-log queries.
 
 Serial vs Parallel Mode:
   DEFAULT: Serial mode (sequential requests) for maximum compatibility.
@@ -62,8 +70,8 @@ Quick Check:
   Use --quick-check to perform a fast connectivity test before attempting
   the full connection. This helps identify unreachable devices quickly.
 
-Complete Data:
-  The library now retrieves ALL modem information including:
+Available Data:
+  Firmware-supported modem information can include:
   - Model name and hardware version
   - Firmware version
   - System uptime
@@ -95,6 +103,18 @@ Complete Data:
     password_group = parser.add_mutually_exclusive_group()
     password_group.add_argument("--password", default=None, type=str, help="Modem login password (env: ARRIS_PW)")
     password_group.add_argument("--password-file", default=None, type=Path, help="Read password from file")
+    parser.add_argument(
+        "--hmac-algorithm",
+        choices=("sha256", "md5"),
+        default="sha256",
+        help="Authentication algorithm required by modem firmware (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--relaxed-http", action="store_true", help="Use legacy raw-socket parsing for incompatible firmware"
+    )
+    parser.add_argument(
+        "--channels-only", action="store_true", help="Fetch signals in one request; omit metadata and logs"
+    )
 
     # Output options
     parser.add_argument(
@@ -162,7 +182,7 @@ def parse_args() -> argparse.Namespace:
     parser = create_parser()
     args = parser.parse_args()
 
-    logger.debug(f"Parsed arguments: {args}")
+    logger.debug("Parsed arguments for %s:%s (parallel=%s)", args.host, args.port, args.parallel)
 
     # Validate arguments
     validate_args(args)

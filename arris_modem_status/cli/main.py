@@ -88,6 +88,8 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
         max_workers=args.workers,
         max_retries=args.retries,
         timeout=final_timeout,
+        hmac_algorithm=getattr(args, "hmac_algorithm", "sha256"),
+        relaxed_http=getattr(args, "relaxed_http", False),
     )
 
 
@@ -129,7 +131,7 @@ def process_modem_status(
     """
     # Get the modem status
     with client:
-        status = client.get_status()
+        status = client.get_status(channels_only=True) if getattr(args, "channels_only", False) else client.get_status()
 
     # Calculate elapsed time
     elapsed = time.time() - start_time

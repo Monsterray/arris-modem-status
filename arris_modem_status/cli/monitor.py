@@ -10,13 +10,19 @@ from typing import Optional
 
 from arris_modem_status import ArrisModemStatusClient
 from arris_modem_status.cli.formatters import format_channel_data_for_display
-from arris_modem_status.exceptions import ArrisModemError, ArrisOperationError
+from arris_modem_status.exceptions import (
+    ArrisAuthenticationError,
+    ArrisConnectionError,
+    ArrisModemError,
+    ArrisOperationError,
+    ArrisTimeoutError,
+)
 
 
-def poll(client: ArrisModemStatusClient, samples: int, interval: int) -> None:
+def poll(client: ArrisModemStatusClient, samples: int, interval: int, channels_only: bool = False) -> None:
     """Print JSON lines, stopping immediately on errors or incomplete status."""
     for index in range(samples):
-        status = client.get_status(include_logs=False)
+        status = client.get_status(include_logs=False, channels_only=channels_only)
         performance = status["_performance"]
         if (
             performance["requests_successful"] != performance["requests_total"]
@@ -35,6 +41,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--host", default="192.168.100.1")
     parser.add_argument("--hmac-algorithm", required=True, choices=("md5", "sha256"))
     parser.add_argument("--password-file", type=Path)
+    parser.add_argument(
+        "--channels-only", action="store_true", help="Fetch signals in one request; omit metadata and logs"
+    )
     parser.add_argument(
         "--relaxed-http", action="store_true", help="Use legacy raw-socket parsing for incompatible firmware"
     )
@@ -60,9 +69,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             enable_instrumentation=False,
             relaxed_http=args.relaxed_http,
         ) as client:
-            poll(client, args.samples, args.interval)
-    except (ArrisModemError, OSError, EOFError) as error:
-        print(f"Stopped: {error}. Check firmware and credentials before trying again.", file=sys.stderr)
+            poll(client, args.samples, args.interval, channels_only=args.channels_only)
+    except (ArrisConnectionError, ArrisTimeoutError) as error:
+        print(f"Stopped: {error}. Check modem connectivity; no automatic retry will be made.", file=sys.stderr)
+        return 1
+    except ArrisAuthenticationError as error:
+        print(f"Stopped: {error}. Check the modem's login page before starting a new client.", file=sys.stderr)
+        return 1
+    except (ArrisModemError, OSError, EOFError, UnicodeError) as error:
+        print(f"Stopped: {error}. No further modem requests will be made.", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("Monitoring stopped.", file=sys.stderr)

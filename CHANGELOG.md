@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Monsterray fork
+
+- Match browser HNAP login signatures/cookies, support explicit MD5/SHA256, and
+  use standard HTTP with browser-style headers by default.
+- Preserve literal Unicode passwords and significant spaces; redact authentication
+  response bodies, session-cookie details, and command-line secrets from diagnostics.
+- Prevent login retries, redirect replays, and implicit reauthentication after
+  rejection or an uncertain login; stop status batches on connection/session failure.
+- Add bounded monitoring, one-request channels-only sampling, offline browser-HAR
+  comparison, and a cited cross-repository improvement plan.
+- Fix remaining type errors and keep automated tests offline with enforced network guards.
+
 ## [1.0.3] - 2025-10-17
 
 ## [1.0.2] - 2025-08-04
