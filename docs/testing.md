@@ -4,7 +4,10 @@
 
 | Environment | Result |
 | --- | --- |
+| Python 3.9.25, clean temporary environment | 338 tests pass |
+| Python 3.10.22, clean temporary environment | 338 tests pass |
 | Python 3.11.15, clean temporary environment | 338 tests pass |
+| Python 3.12.13, clean temporary environment | 338 tests pass |
 | Python 3.13.14, clean temporary environment | 338 tests pass |
 | Python 3.14.7, development environment | 338 tests pass; 83.23% branch-inclusive coverage |
 | Extracted source archive, Python 3.11.15 | 338 tests pass |
@@ -43,8 +46,10 @@ python -m twine check dist/*
 
 The CI workflow includes the working branch as a push trigger, retains its
 Python 3.9–3.13 matrix, and builds/tests the source distribution on Python 3.11.
-Local testing does not establish the result on Python 3.9/3.10 or Linux; those
-require a completed hosted run.
+All six Python versions above were tested locally on macOS. Hosted Linux results
+remain unverified: GitHub lists no registered workflows for this fork, despite
+Actions being enabled and the workflow files existing on both branches. An explicit
+dispatch of `quality-check.yml` returned HTTP 404. No hosted run was observed.
 
 ## Hardware verification still required
 
