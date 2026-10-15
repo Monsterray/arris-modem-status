@@ -271,6 +271,10 @@ class HNAPAuthenticator:
         try:
             data = json.loads(response_text)
             login_resp = data["LoginResponse"]
+            if "LoginResult" in login_resp:
+                result = login_resp["LoginResult"]
+                if not isinstance(result, str) or result.upper() not in {"SUCCESS", "OK", "TRUE"}:
+                    raise ValueError("Challenge request was rejected")
             challenge = login_resp["Challenge"]
             public_key = login_resp["PublicKey"]
             uid_cookie = login_resp.get("Cookie")

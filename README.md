@@ -29,6 +29,8 @@ monitor also sets request-handler retries to zero.
 
 See [the source comparison and improvement roadmap](docs/monitoring-research.md)
 for the nine repositories reviewed, pinned source references, and hardware-test limits.
+See [testing results and remaining hardware checks](docs/testing.md) for the
+compatibility matrix, package validation, and reproducible regression commands.
 
 ### Conservative S33v2 sampling
 

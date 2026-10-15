@@ -4,6 +4,7 @@ name: Quality Check
     branches:
     - main
     - develop
+    - fix/authentication-and-cli
   pull_request:
     branches:
     - main
@@ -43,7 +44,7 @@ jobs:
         python -m pip install --upgrade pip
         # Upgrade setuptools to fix security vulnerabilities
         python -m pip install --upgrade "setuptools>=78.1.1"
-        pip install -e .[dev,test]
+        pip install -e .[dev,test,build]
     - name: Run Ruff linting
       run: |
         ruff --version
@@ -82,6 +83,15 @@ jobs:
         name: codecov-umbrella
         fail_ci_if_error: false
         token: ${{ secrets.CODECOV_TOKEN }}
+    - name: Build and test distributions
+      if: matrix.python-version == '3.11'
+      run: |
+        python -m build
+        twine check dist/*
+        archive_dir=$(mktemp -d)
+        tar -xzf dist/arris_modem_status-*.tar.gz -C "$archive_dir"
+        cd "$archive_dir"/arris_modem_status-*
+        python -m pytest tests/ --no-cov
   security:
     runs-on: ubuntu-latest
     steps:

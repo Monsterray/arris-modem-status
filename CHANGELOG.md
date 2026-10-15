@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add bounded monitoring, one-request channels-only sampling, offline browser-HAR
   comparison, and a cited cross-repository improvement plan.
 - Fix remaining type errors and keep automated tests offline with enforced network guards.
+- Reject failed challenge outcomes before submitting credentials, preserve wrapped
+  event logs, and report the timeout actually used by CLI requests.
+- Include shared fixtures and protocol vectors in source distributions; validate
+  wheel/source metadata and test the source archive in CI.
 
 ## [1.0.3] - 2025-10-17
 

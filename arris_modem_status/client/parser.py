@@ -501,7 +501,8 @@ class HNAPResponseParser:
                     continue
 
                 if response_type == "system_log":
-                    log_response = data.get("GetCustomerStatusLogResponse", {})
+                    log_data = data.get("GetMultipleHNAPsResponse", data)
+                    log_response = log_data.get("GetCustomerStatusLogResponse", {})
                     log_raw = log_response.get("CustomerStatusLogList", "")
 
                     log_entries = self._parse_logs(log_raw)
