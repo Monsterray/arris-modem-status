@@ -32,7 +32,7 @@ See [the source comparison and improvement roadmap](docs/monitoring-research.md)
 for the nine repositories reviewed, pinned source references, and hardware-test limits.
 See [testing results and remaining hardware checks](docs/testing.md) for the
 compatibility matrix, package validation, and reproducible regression commands.
-The offline suite reaches 99.80% combined coverage (100% line coverage), and the
+The offline suite reaches 99.76% combined coverage (100% line coverage), and the
 configured gate requires at least 99%; no new coverage exclusions were introduced.
 
 ### Conservative S33v2 sampling

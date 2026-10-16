@@ -12,6 +12,7 @@ from arris_modem_status.exceptions import (
     ArrisAuthenticationError,
     ArrisConnectionError,
     ArrisHTTPError,
+    ArrisModemError,
     ArrisTimeoutError,
     wrap_connection_error,
 )
@@ -248,3 +249,51 @@ def test_raw_receive_tolerates_content_length_without_colon():
     connection = Mock()
     connection.recv.side_effect = [raw, b""]
     assert ArrisCompatibleHTTPAdapter()._receive_response_tolerantly(connection) == raw
+
+
+@pytest.mark.unit
+class TestExceptionsCoverage:
+    """Test exception edge cases for coverage."""
+
+    def test_arris_modem_error_str_with_details(self):
+        """Test ArrisModemError string representation with details."""
+        error = ArrisModemError("Test error", details={"key": "value", "number": 42})
+
+        error_str = str(error)
+        assert "Test error" in error_str
+        assert "details:" in error_str
+        assert "key" in error_str
+        assert "value" in error_str
+
+    def test_arris_http_error_without_status_code(self):
+        """Test ArrisHTTPError without explicit status code."""
+        error = ArrisHTTPError("HTTP error occurred")
+
+        assert error.status_code is None
+        assert error.details is not None
+        assert "status_code" not in error.details
+
+    def test_arris_http_error_with_status_code_no_details(self):
+        """Test ArrisHTTPError with status code but no initial details."""
+        error = ArrisHTTPError("HTTP error", status_code=500)
+
+        assert error.status_code == 500
+        assert error.details["status_code"] == 500
+
+    def test_wrap_connection_error_generic(self):
+        """Test wrapping generic connection error."""
+        original = OSError("Network is unreachable")
+        wrapped = wrap_connection_error(original, "192.168.1.1", 443)
+
+        assert isinstance(wrapped, ArrisConnectionError)
+        assert "192.168.1.1:443" in str(wrapped)
+        assert wrapped.details["error_type"] == "OSError"
+
+
+def test_http_error_without_response_keeps_status(monkeypatch):
+    """An HTTPError with no response should preserve the status in its message."""
+    handler = HNAPRequestHandler(Mock(), "https://192.168.100.1", max_retries=0)
+    monkeypatch.setattr(handler, "_make_raw_request", Mock(side_effect=requests.HTTPError("HTTP 401")))
+    with pytest.raises(ArrisHTTPError) as error:
+        handler.make_request_with_retry("Login", {})
+    assert error.value.status_code == 401

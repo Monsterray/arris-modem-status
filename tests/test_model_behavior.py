@@ -78,6 +78,11 @@ def test_channel_counters_keep_valid_values(channel, corrected, uncorrected, tot
 
 
 def test_numeric_channel_values_and_unavailable_snr(channel):
+    assert channel.frequency == "549000000 Hz"
+    assert channel.power == "0 dBmV"
+    assert channel.snr == "40 dB"
+    assert replace(channel, snr="").snr == ""
+    assert replace(channel, snr="invalid").snr == "invalid"
     assert channel.get_power_numeric() == 0
     assert channel.get_snr_numeric() == 40
     assert channel.get_frequency_mhz() == 549

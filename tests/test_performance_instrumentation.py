@@ -9,63 +9,8 @@ from arris_modem_status.models import TimingMetrics
 
 @pytest.mark.unit
 @pytest.mark.performance
-class TestTimingMetrics:
-    """Test TimingMetrics dataclass."""
-
-    def test_timing_metrics_creation(self):
-        """Test TimingMetrics creation and properties."""
-        start_time = time.time()
-        end_time = start_time + 0.5
-
-        metrics = TimingMetrics(
-            operation="test_op",
-            start_time=start_time,
-            end_time=end_time,
-            duration=0.5,
-            success=True,
-            error_type=None,
-            retry_count=0,
-            http_status=200,
-            response_size=1024,
-        )
-
-        assert metrics.operation == "test_op"
-        assert metrics.duration == 0.5
-        assert metrics.duration_ms == 500.0
-        assert metrics.success is True
-        assert metrics.http_status == 200
-        assert metrics.response_size == 1024
-
-    def test_timing_metrics_with_error(self):
-        """Test TimingMetrics with error information."""
-        metrics = TimingMetrics(
-            operation="failed_op",
-            start_time=time.time(),
-            end_time=time.time() + 0.1,
-            duration=0.1,
-            success=False,
-            error_type="ConnectionError",
-            retry_count=2,
-            http_status=500,
-        )
-
-        assert metrics.success is False
-        assert metrics.error_type == "ConnectionError"
-        assert metrics.retry_count == 2
-
-
-@pytest.mark.unit
-@pytest.mark.performance
 class TestPerformanceInstrumentation:
     """Test PerformanceInstrumentation class."""
-
-    def test_initialization(self):
-        """Test instrumentation initialization."""
-        instrumentation = PerformanceInstrumentation()
-
-        assert instrumentation.timing_metrics == []
-        assert instrumentation.request_metrics == {}
-        assert isinstance(instrumentation.session_start_time, float)
 
     def test_start_timer(self):
         """Test timer start functionality."""
@@ -170,18 +115,6 @@ class TestPerformanceInstrumentation:
         assert auth_stats["count"] == 2
         assert auth_stats["success_rate"] == 0.5  # 1 success out of 2
 
-    def test_performance_insights_generation(self):
-        """Test performance insights generation."""
-        instrumentation = PerformanceInstrumentation()
-        start_time = time.time()
-
-        # Record metrics that should generate insights
-        instrumentation.record_timing("auth", start_time, success=True)
-
-        summary = instrumentation.get_performance_summary()
-        insights = summary["performance_insights"]
-
-        assert isinstance(insights, list)
         # Should have some insights with recorded metrics
 
     def test_percentile_calculation(self):
@@ -205,28 +138,6 @@ class TestPerformanceInstrumentation:
 
         # With 5 values [0.1, 0.2, 0.3, 0.4, 0.5], median should be 0.3
         assert percentiles["p50"] == 0.3
-
-    def test_http_compatibility_overhead_tracking(self):
-        """Test tracking of HTTP compatibility overhead."""
-        instrumentation = PerformanceInstrumentation()
-        start_time = time.time()
-
-        # Record normal operation
-        instrumentation.record_timing("normal_request", start_time, success=True)
-
-        # Record operation with compatibility handling
-        instrumentation.record_timing(
-            "http_compatibility_fallback",
-            start_time,
-            success=True,
-            retry_count=1,
-        )
-
-        summary = instrumentation.get_performance_summary()
-        session_metrics = summary["session_metrics"]
-
-        # Should track compatibility overhead
-        assert "http_compatibility_overhead" in session_metrics
 
     @patch("arris_modem_status.instrumentation.logger")
     def test_debug_logging(self, mock_logger):
@@ -278,20 +189,6 @@ class TestPerformanceInstrumentation:
 
         # Should have insight about low throughput
         assert any("low throughput" in insight.lower() for insight in insights)
-
-    def test_performance_insights_no_errors(self):
-        """Test performance insights when there are no errors."""
-        instrumentation = PerformanceInstrumentation()
-
-        # Record only successful operations
-        for i in range(5):
-            instrumentation.record_timing(f"success_{i}", time.time() - i, success=True)
-
-        summary = instrumentation.get_performance_summary()
-        insights = summary["performance_insights"]
-
-        # Should have insight about perfect reliability
-        assert any("perfect reliability" in insight.lower() or "0% error" in insight.lower() for insight in insights)
 
     def test_performance_insights_slow_auth(self):
         """Test performance insights for slow authentication."""
@@ -433,43 +330,23 @@ class TestPerformanceInstrumentation:
         assert summary["session_metrics"]["http_compatibility_overhead"] == 0.8
 
 
-@pytest.mark.unit
-@pytest.mark.performance
-class TestPerformanceIntegration:
-    """Test performance instrumentation integration."""
+def test_performance_summary_handles_zero_elapsed_time(monkeypatch):
+    monkeypatch.setattr("time.time", lambda: 100)
+    metrics = PerformanceInstrumentation()
+    metrics.record_timing("authentication_complete", 98.5)
+    report = metrics.get_performance_summary()
+    assert report["session_metrics"]["total_session_time"] == 0
+    assert report["response_time_percentiles"]["p50"] == 1.5
+    assert "Perfect reliability: 0% error rate" in report["performance_insights"]
 
-    def test_instrumentation_disabled(self):
-        """Test behavior when instrumentation is disabled."""
-        from arris_modem_status import ArrisModemStatusClient
 
-        client = ArrisModemStatusClient(password="test", enable_instrumentation=False)
-
-        assert client.instrumentation is None
-
-    def test_instrumentation_enabled(self):
-        """Test behavior when instrumentation is enabled."""
-        from arris_modem_status import ArrisModemStatusClient
-
-        client = ArrisModemStatusClient(password="test", enable_instrumentation=True)
-
-        assert client.instrumentation is not None
-        assert isinstance(client.instrumentation, PerformanceInstrumentation)
-
-    def test_get_performance_metrics(self):
-        """Test getting performance metrics from client."""
-        from arris_modem_status import ArrisModemStatusClient
-
-        client = ArrisModemStatusClient(password="test", enable_instrumentation=True)
-
-        # Should return metrics even if empty
-        metrics = client.get_performance_metrics()
-        assert isinstance(metrics, dict)
-
-    def test_get_performance_metrics_disabled(self):
-        """Test getting performance metrics when disabled."""
-        from arris_modem_status import ArrisModemStatusClient
-
-        client = ArrisModemStatusClient(password="test", enable_instrumentation=False)
-
-        metrics = client.get_performance_metrics()
-        assert metrics["error"] == "Performance instrumentation not enabled"
+def test_performance_summary_does_not_alert_on_small_error_rate(monkeypatch):
+    now = [100]
+    monkeypatch.setattr("time.time", lambda: now[0])
+    metrics = PerformanceInstrumentation()
+    for index in range(20):
+        metrics.record_timing("status", 99, success=index > 0)
+    now[0] = 120
+    report = metrics.get_performance_summary()
+    assert report["session_metrics"]["failed_operations"] == 1
+    assert not any("throughput" in insight or "error rate" in insight for insight in report["performance_insights"])

@@ -158,3 +158,13 @@ class TestLogParsing:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_bad_channel_and_log_data_fail_without_raising(monkeypatch):
+    parser = HNAPResponseParser()
+    assert parser._parse_channel_string(123, "downstream") == []
+    assert parser._parse_logs(123) == []
+    monkeypatch.setattr("time.time", lambda: 100)
+    logs = parser._parse_logs("}-{0^invalid^^Warning^Synthetic")
+    assert len(logs) == 1
+    assert logs[0].timestamp == 100

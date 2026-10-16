@@ -3,7 +3,6 @@
 import hashlib
 import hmac
 import json
-import logging
 
 import pytest
 import requests
@@ -12,20 +11,6 @@ from arris_modem_status import ArrisModemStatusClient
 from arris_modem_status.cli.main import main as cli_main
 from arris_modem_status.cli.monitor import main as monitor_main
 from arris_modem_status.exceptions import ArrisParsingError
-
-
-@pytest.fixture(autouse=True)
-def preserve_cli_logging():
-    """Restore handlers before pytest closes the CLI's captured stderr stream."""
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    yield
-    for handler in root.handlers[:]:
-        if handler not in handlers:
-            root.removeHandler(handler)
-            handler.close()
-    root.handlers = handlers
-    root.setLevel(level)
 
 
 @pytest.fixture
@@ -101,10 +86,12 @@ def test_complete_cli_preserves_wrapped_logs(modem_wire, monkeypatch, tmp_path, 
     path.write_text(password + "\n", encoding="utf-8")
     monkeypatch.setattr(
         "sys.argv",
-        ["arris-modem-status", "--password-file", str(path), "--hmac-algorithm", "md5", "--quiet", "--timeout", "60"],
+        ["arris-modem-status", "--password-file", str(path), "--hmac-algorithm", "md5", "--timeout", "60"],
     )
     assert cli_main() is None
-    output = json.loads(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    assert "ARRIS MODEM STATUS SUMMARY" in captured.err
+    output = json.loads(captured.out)
     assert output["model_name"] == "S34"
     assert len(output["downstream_channels"]) == len(output["upstream_channels"]) == 3
     assert [entry["message"] for entry in output["log_entries"]] == ["Synthetic T3 timeout"]

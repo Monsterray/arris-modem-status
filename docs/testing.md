@@ -4,13 +4,13 @@
 
 | Environment | Result |
 | --- | --- |
-| Python 3.9.25, clean temporary environment | 495 tests pass |
-| Python 3.10.22, clean temporary environment | 495 tests pass |
-| Python 3.11.15, clean temporary environment | 495 tests pass |
-| Python 3.12.13, clean temporary environment | 495 tests pass |
-| Python 3.13.14, clean temporary environment | 495 tests pass |
-| Python 3.14.7, development environment | 495 tests pass; 99.80% branch-inclusive coverage |
-| Extracted source archive, Python 3.11.15 | 495 tests pass |
+| Python 3.9.25, clean temporary environment | 412 tests pass |
+| Python 3.10.22, clean temporary environment | 412 tests pass |
+| Python 3.11.15, clean temporary environment | 412 tests pass |
+| Python 3.12.13, clean temporary environment | 412 tests pass |
+| Python 3.13.14, clean temporary environment | 412 tests pass |
+| Python 3.14.7, development environment | 412 tests pass; 99.76% branch-inclusive coverage |
+| Extracted source archive, Python 3.11.15 | 412 tests pass |
 | Installed wheel outside the checkout, Python 3.13.14 | Standard CLI, monitor, and offline comparison help work |
 | Wheel and source metadata | `twine check` passes |
 | Distribution contents | No `modem_pass`, HAR, or JSONL paths; source archive includes test fixtures and browser vectors |
@@ -51,6 +51,38 @@ remain unverified: GitHub lists no registered workflows for this fork, despite
 Actions being enabled and the workflow files existing on both branches. An explicit
 dispatch of `quality-check.yml` returned HTTP 404. No hosted run was observed.
 
+## Consolidated offline suite
+
+The suite now has 412 cases across 18 test files, down from 495 cases and 32
+`test_*.py` files. Test/support Python code shrank from 7,394 to 5,352 lines
+(2,042 removed). Removed duplicate creation/import checks, mock-only assertions,
+unused mock utilities and runner, empty test packages, and wall-clock speed checks.
+Retained distinct input boundaries and the regression checks for reported bugs.
+Equivalent CLI argument, connectivity, and error cases share parameterized tests;
+catch-all supplemental files were folded into their feature's tests.
+
+| Behavior | Tests to run with `--no-cov` for a focused check |
+| --- | --- |
+| HNAP signatures, browser comparison, password preservation | `test_authentication.py`, `test_browser_login_comparison.py`, `test_password_characters.py` |
+| Login replay prevention, session failure, transport, VPN binding | `test_reliability_guards.py`, `test_browser_transport.py`, `test_http_compatibility.py`, `test_interface_binding.py` |
+| Real request preparation and complete CLI/monitor output | `test_end_to_end.py` |
+| Client collection, logs, channel/time/metadata parsing | `test_arris_client_core.py`, `test_log_parsing.py`, `test_channel_parsing.py`, `test_time_parsing.py`, `test_s33_metadata.py` |
+| CLI/monitor limits and failures | `test_cli.py`, `test_monitor.py` |
+| Model boundaries, metrics, and diagnostic failures | `test_model_behavior.py`, `test_performance_instrumentation.py`, `test_failure_boundaries.py` |
+
+Consolidation exposed a CLI failure when no password was supplied with stdout
+captured by a Python caller: `fileno()` raised `UnsupportedOperation` instead of
+reporting the missing password. The CLI now uses the stream's `isatty()` method;
+its regression test checks exit code, clean stdout, and no client construction.
+The interactive prompt still has a separate check. Logging cleanup is shared
+across all tests, and the successful status fixture now includes all five status
+responses rather than quietly exhausting its response list on the final request.
+
+Combined coverage changed from 99.80% to 99.76% after removing a synthetic
+raw-handler `None`-return check. Line coverage remains 100%, the gate remains 99%,
+and no coverage configuration was changed to accommodate consolidation. The suite
+remains offline; this work did not contact the modem or read the password file.
+
 ## Connection diagnosis and live sample
 
 The failing path was reproduced before authentication: `route -n get
@@ -85,19 +117,20 @@ Linux device binding has offline coverage only.
 
 ## Coverage and completion
 
-The full offline suite now passes 495 tests under the configured 99% coverage gate.
+The full offline suite now passes 412 tests under the configured 99% coverage gate.
 
 | Measurement | Verified result |
 | --- | --- |
-| Combined line and branch coverage | 99.80% |
+| Combined line and branch coverage | 99.76% |
 | Executable statements | 1,876 / 1,876; 100% |
-| Branch outcomes | 577 / 582; 99.14% |
+| Branch outcomes | 576 / 582; 98.97% |
 | Required combined coverage | 99%, raised from 80% |
 
-No coverage exclusion rules were added or changed. Five branch outcomes remain:
+No coverage exclusion rules were added or changed. Six branch outcomes remain:
 optional missing preflight error text, the zero-count guard after a nonempty error
 history, cleanup when the session is already absent, and empty duration/operation
-guards in instrumentation. These remain in the measured source.
+guards in instrumentation, plus the internal raw-handler `None` retry path.
+These remain in the measured source.
 
 The added checks cover signal/error/performance model boundaries, actual client
 log retrieval and validation, malformed firmware and HAR inputs, redacted CLI

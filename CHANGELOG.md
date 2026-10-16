@@ -26,11 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after tracing connection timeouts to a VPN route; verify one live S33v2 sample.
 - Read S33v2 uptime from connection info and internet status from device status,
   and parse its days/hours/minutes/seconds uptime notation.
-- Reach 99.80% combined coverage and 100% line coverage with offline tests; raise
+- Reach 99.76% combined coverage and 100% line coverage with offline tests; raise
   the required coverage gate to 99% without adding exclusions.
 - Fix public log retrieval and ordering, exact channel lock checks, empty-message
   status timeout retries, raised HTTP authentication denials, and malformed
   metadata/HAR handling discovered by the expanded tests.
+
+- Consolidate 495 offline cases into 412 across 18 focused files; remove unused
+  helpers and duplicate/mock-only checks while retaining 100% line coverage.
+- Fix missing-password handling when CLI stdout has no file descriptor, and
+  restore logging between tests so captured streams do not leak across cases.
 
 ## [1.0.3] - 2025-10-17
 
