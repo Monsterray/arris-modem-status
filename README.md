@@ -17,9 +17,10 @@ arris-modem-status --password-file /path/to/modem-password --quiet --timeout 30
 The remaining type-check errors are also fixed. HNAP authentication now supports
 explicit `md5` and `sha256` firmware variants; SHA256 remains the library default.
 The firmware test results below are inherited from upstream. A controlled S33v2
-login with MD5, standard HTTP, and browser-style headers returned `LoginResult: OK`.
-Full status sampling and long-running modem stability remain unverified: subsequent
-anonymous login-page requests timed out before any login POST was sent.
+sample using MD5 and the physical LAN interface returned `LoginResult: OK`, all
+four status responses, 34 downstream channels, and four upstream channels. Earlier
+timeouts were traced to the Mac's default route through a VPN tunnel. Sustained
+modem stability remains unverified.
 
 The client now uses standard HTTP by default, loads the public login page to seed
 cookies, and sends browser-style headers. `relaxed_http=True` in Python or the
@@ -101,6 +102,25 @@ Separate CLI invocations each create a new login session, so avoid scheduling th
 as frequent cron jobs. Increasing the interval is a conservative choice, not a
 guarantee against firmware crashes. Check uptime and connection stability before
 extending the monitoring period.
+
+### VPN routing
+
+If a VPN captures the modem route, select the physical LAN interface explicitly:
+
+```bash
+python -m arris_modem_status.cli.monitor --hmac-algorithm md5 --password-file modem_pass --interface en0
+```
+
+On the tested Mac, the default route through `utun7` timed out while the same
+anonymous request bound to `en0` returned HTTP 200. The collector then authenticated
+and collected its first full status sample through `en0`. Interface names are
+machine-specific; selection is explicit rather than automatic.
+
+Both CLI entry points support `--interface`; the standard CLI's `--quick-check`
+uses the same selected interface. Binding affects only the collector's sockets and
+does not change system routes or disable the VPN. It requires standard HTTP.
+macOS binding currently targets IPv4; Linux uses device binding, which may require
+appropriate OS privileges. Linux binding has offline coverage, not a live device test.
 
 ### Offline browser-login comparison
 

@@ -90,6 +90,7 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
         timeout=final_timeout,
         hmac_algorithm=getattr(args, "hmac_algorithm", "sha256"),
         relaxed_http=getattr(args, "relaxed_http", False),
+        network_interface=getattr(args, "interface", None),
     )
 
 
@@ -106,7 +107,12 @@ def perform_connectivity_check(args: Any) -> bool:
     if not args.quick_check:
         return True
 
-    is_reachable, error_msg = quick_connectivity_check(args.host, args.port, timeout=2.0)
+    if getattr(args, "interface", None):
+        is_reachable, error_msg = quick_connectivity_check(
+            args.host, args.port, timeout=2.0, network_interface=args.interface
+        )
+    else:
+        is_reachable, error_msg = quick_connectivity_check(args.host, args.port, timeout=2.0)
 
     if not is_reachable:
         print(f"❌ {error_msg}", file=sys.stderr)

@@ -14,10 +14,14 @@ import socket
 import sys
 from typing import Optional
 
+from arris_modem_status.http_compatibility import get_interface_socket_option
+
 logger = logging.getLogger(__name__)
 
 
-def quick_connectivity_check(host: str, port: int = 443, timeout: float = 2.0) -> tuple[bool, Optional[str]]:
+def quick_connectivity_check(
+    host: str, port: int = 443, timeout: float = 2.0, network_interface: Optional[str] = None
+) -> tuple[bool, Optional[str]]:
     """
     Quick TCP connectivity check before attempting HTTPS connection.
 
@@ -29,6 +33,7 @@ def quick_connectivity_check(host: str, port: int = 443, timeout: float = 2.0) -
         host: Target hostname or IP address
         port: Target port (default: 443 for HTTPS)
         timeout: Connection timeout in seconds (default: 2.0)
+        network_interface: Explicit IPv4 LAN interface; defaults to system routing
 
     Returns:
         (is_reachable, error_message) - error_message is None if reachable
@@ -37,10 +42,18 @@ def quick_connectivity_check(host: str, port: int = 443, timeout: float = 2.0) -
         logger.info(f"Performing quick connectivity check: {host}:{port}")
         print(f"🔍 Quick connectivity check: {host}:{port}...", file=sys.stderr)
 
-        with socket.create_connection((host, port), timeout=timeout):
-            logger.info("TCP connection successful")
-            print("✅ TCP connection successful", file=sys.stderr)
-            return True, None
+        if network_interface is not None:
+            option = get_interface_socket_option(network_interface)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as connection:
+                connection.setsockopt(*option)
+                connection.settimeout(timeout)
+                connection.connect((host, port))
+        else:
+            with socket.create_connection((host, port), timeout=timeout):
+                pass
+        logger.info("TCP connection successful")
+        print("✅ TCP connection successful", file=sys.stderr)
+        return True, None
 
     except socket.timeout:
         error_msg = f"Connection timeout - {host}:{port} not responding within {timeout}s"

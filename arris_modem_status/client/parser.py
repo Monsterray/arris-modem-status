@@ -489,7 +489,9 @@ class HNAPResponseParser:
                             {
                                 "model_name": software_info.get("StatusSoftwareModelName", "Unknown"),
                                 "firmware_version": software_info.get("StatusSoftwareSfVer", "Unknown"),
-                                "system_uptime": software_info.get("CustomerConnSystemUpTime", "Unknown"),
+                                "system_uptime": software_info.get(
+                                    "CustomerConnSystemUpTime", parsed_data["system_uptime"]
+                                ),
                                 "hardware_version": software_info.get("StatusSoftwareHdVer", "Unknown"),
                             }
                         )
@@ -545,6 +547,9 @@ class HNAPResponseParser:
                                 "current_system_time": conn_info.get("CustomerCurSystemTime", "Unknown"),
                                 "connection_status": conn_info.get("CustomerConnNetworkAccess", "Unknown"),
                                 "network_access": conn_info.get("CustomerConnNetworkAccess", "Unknown"),
+                                "system_uptime": conn_info.get(
+                                    "CustomerConnSystemUpTime", parsed_data["system_uptime"]
+                                ),
                             }
                         )
                         # Only use model name from here if we didn't get it from software_info
@@ -553,11 +558,14 @@ class HNAPResponseParser:
 
                 elif response_type == "internet_register":
                     internet_info = hnaps_response.get("GetInternetConnectionStatusResponse", {})
+                    device_info = hnaps_response.get("GetArrisDeviceStatusResponse", {})
                     register_info = hnaps_response.get("GetArrisRegisterInfoResponse", {})
 
                     parsed_data.update(
                         {
-                            "internet_status": internet_info.get("InternetConnection", "Unknown"),
+                            "internet_status": internet_info.get(
+                                "InternetConnection", device_info.get("InternetConnection", "Unknown")
+                            ),
                             "mac_address": register_info.get("MacAddress", "Unknown"),
                             "serial_number": register_info.get("SerialNumber", "Unknown"),
                         }

@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   event logs, and report the timeout actually used by CLI requests.
 - Include shared fixtures and protocol vectors in source distributions; validate
   wheel/source metadata and test the source archive in CI.
+- Add explicit LAN-interface selection for modem requests and connectivity checks
+  after tracing connection timeouts to a VPN route; verify one live S33v2 sample.
+- Read S33v2 uptime from connection info and internet status from device status,
+  and parse its days/hours/minutes/seconds uptime notation.
 
 ## [1.0.3] - 2025-10-17
 

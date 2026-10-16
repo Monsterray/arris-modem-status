@@ -121,6 +121,7 @@ class ArrisModemStatusClient:
         enable_instrumentation: bool = True,
         hmac_algorithm: str = "sha256",
         relaxed_http: bool = False,
+        network_interface: Optional[str] = None,
     ):
         """
         Initialize the Arris modem client with HTTP compatibility and instrumentation.
@@ -140,6 +141,7 @@ class ArrisModemStatusClient:
             enable_instrumentation: Enable detailed performance instrumentation (default: True)
             hmac_algorithm: Firmware HNAP hash algorithm (sha256 or md5)
             relaxed_http: Opt into custom raw-socket HTTP parsing (default: False)
+            network_interface: Explicit LAN interface for modem sockets, leaving system routes unchanged
         """
         self.host = host
         self.port = port
@@ -163,7 +165,9 @@ class ArrisModemStatusClient:
         self.instrumentation = PerformanceInstrumentation() if enable_instrumentation else None
 
         # Configure HTTP session with relaxed parsing for HNAP endpoints
-        self.session = create_arris_compatible_session(self.instrumentation, relaxed_http=relaxed_http)
+        self.session = create_arris_compatible_session(
+            self.instrumentation, relaxed_http=relaxed_http, network_interface=network_interface
+        )
         origin = f"https://{host}" + (f":{port}" if port != 443 else "")
         self.session.headers.update(
             {
@@ -456,6 +460,7 @@ class ArrisModemStatusClient:
                     {
                         "GetMultipleHNAPs": {
                             "GetInternetConnectionStatus": "",
+                            "GetArrisDeviceStatus": "",
                             "GetArrisRegisterInfo": "",
                             "GetArrisRegisterStatus": "",
                         }

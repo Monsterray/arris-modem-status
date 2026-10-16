@@ -41,6 +41,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--host", default="192.168.100.1")
     parser.add_argument("--hmac-algorithm", required=True, choices=("md5", "sha256"))
     parser.add_argument("--password-file", type=Path)
+    parser.add_argument("--interface", help="Bind modem sockets to an explicit LAN interface (macOS/Linux)")
     parser.add_argument(
         "--channels-only", action="store_true", help="Fetch signals in one request; omit metadata and logs"
     )
@@ -68,6 +69,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             max_retries=0,
             enable_instrumentation=False,
             relaxed_http=args.relaxed_http,
+            network_interface=args.interface,
         ) as client:
             poll(client, args.samples, args.interval, channels_only=args.channels_only)
     except (ArrisConnectionError, ArrisTimeoutError) as error:

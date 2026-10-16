@@ -1,6 +1,25 @@
 # S33v2 authentication and monitoring research
 
-Research date: 2026-10-13. This is a source comparison, controlled hardware-test record, and ranked work plan. One authentication succeeded; full sampling and long-running stability remain unverified. Public repositories were cloned to `/tmp/arris-research`; source links below pin the inspected commits. The repository research made no modem login attempts. Subsequently, the user authorized using a local credential file; test processes read it internally without displaying or inspecting its contents. No raw user sample output was included in the report.
+Research date: 2026-10-13; hardware update: 2026-10-15. This is a source comparison, controlled hardware-test record, and ranked work plan. Two finite status/channel samples are now verified; long-running stability remains unverified. Public repositories were cloned to `/tmp/arris-research`; source links below pin the inspected commits. The repository research made no modem login attempts. Subsequently, the user authorized using a local credential file; test processes read it internally without displaying or inspecting its contents. No raw user sample output was included in the report.
+
+## VPN diagnosis: 2026-10-15
+
+The Mac routed the modem IP through `utun7`; unbound TCP/public-page checks timed
+out before authentication. Binding the same anonymous request to the physical
+`en0` interface returned HTTP 200 immediately. A single MD5 login and full serial
+collection through `en0` then succeeded: one challenge, one credential POST, four
+status POSTs, 34 downstream channels, and four upstream channels. This isolates
+the current reachability failure to the routing path rather than authentication.
+
+Explicit per-client interface selection now leaves the VPN and system routes
+unchanged. The sample also exposed missing uptime/internet-status mappings;
+offline regressions cover the S33v2-specific sources already described in the
+catalog and the modem's public login JavaScript. A second finite sample after at
+least 900 seconds confirmed uptime, parsed uptime seconds, and `Connected` internet
+status with all four requests succeeding. Sustained session/stability observation
+remains acceptance work.
+See [the current validation record](testing.md). Earlier timeout observations below
+are historical evidence from before this routing diagnosis.
 
 ## Controlled hardware result after the source review
 

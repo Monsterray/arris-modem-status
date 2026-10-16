@@ -783,6 +783,7 @@ class TestCLIHelperFunctions:
             timeout=(2, 30),  # Local connect timeout and requested read timeout
             hmac_algorithm="sha256",
             relaxed_http=False,
+            network_interface=None,
         )
 
     def test_perform_connectivity_check_not_requested(self):

@@ -115,6 +115,7 @@ Available Data:
     parser.add_argument(
         "--channels-only", action="store_true", help="Fetch signals in one request; omit metadata and logs"
     )
+    parser.add_argument("--interface", help="Bind modem sockets to an explicit LAN interface (macOS/Linux)")
 
     # Output options
     parser.add_argument(

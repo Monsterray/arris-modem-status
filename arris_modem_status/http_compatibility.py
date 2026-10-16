@@ -252,6 +252,7 @@ import contextlib
 import logging
 import socket
 import ssl
+import sys
 import time
 import warnings
 from collections.abc import Mapping
@@ -261,6 +262,7 @@ import requests
 import urllib3
 from requests.adapters import HTTPAdapter
 from requests.models import Response
+from urllib3.connection import HTTPConnection
 from urllib3.exceptions import InsecureRequestWarning
 
 try:
@@ -268,7 +270,7 @@ try:
 except ImportError:
     __version__ = "1.0.0"  # Fallback version
 
-from arris_modem_status.exceptions import ArrisConnectionError, ArrisTimeoutError
+from arris_modem_status.exceptions import ArrisConfigurationError, ArrisConnectionError, ArrisTimeoutError
 
 # Configure HTTP compatibility warnings suppression
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -1426,8 +1428,26 @@ class ArrisCompatibleHTTPAdapter(HTTPAdapter):
             return response
 
 
+def get_interface_socket_option(network_interface: str) -> tuple[int, int, Union[int, bytes]]:
+    """Bind one socket to an explicit interface without changing system routing."""
+    try:
+        interface_index = socket.if_nametoindex(network_interface)
+    except (OSError, ValueError) as error:
+        raise ArrisConfigurationError("Unknown network interface", details={"interface": network_interface}) from error
+    platform_name = sys.platform
+    if platform_name == "darwin":
+        # Darwin netinet/in.h defines IP_BOUND_IF=25; Python does not expose it.
+        return socket.IPPROTO_IP, 25, interface_index
+    if platform_name.startswith("linux"):
+        device_option = getattr(socket, "SO_BINDTODEVICE", None)
+        if device_option is None:
+            raise ArrisConfigurationError("Device binding is unavailable in this Python runtime")
+        return socket.SOL_SOCKET, device_option, network_interface.encode() + b"\0"
+    raise ArrisConfigurationError("Interface selection is supported on macOS and Linux")
+
+
 def create_arris_compatible_session(
-    instrumentation: Optional[Any] = None, relaxed_http: bool = True
+    instrumentation: Optional[Any] = None, relaxed_http: bool = True, network_interface: Optional[str] = None
 ) -> requests.Session:
     """
     Create a requests Session optimized for maximum Arris modem compatibility and reliability.
@@ -1452,6 +1472,8 @@ def create_arris_compatible_session(
         **Monitoring Integration**: Optional performance instrumentation for operational visibility
 
     Args:
+        relaxed_http: Use the legacy raw-socket transport; disable for interface binding.
+        network_interface: Explicit modem interface on macOS/Linux; macOS binding uses IPv4.
         instrumentation: Optional PerformanceInstrumentation instance for detailed
                         monitoring and performance analysis. When provided, the session
                         automatically records comprehensive metrics including:
@@ -1670,6 +1692,12 @@ def create_arris_compatible_session(
         The configuration prioritizes compatibility and reliability over strict
         protocol adherence and performance optimization.
     """
+    socket_options = list(HTTPConnection.default_socket_options)
+    if network_interface is not None:
+        if relaxed_http:
+            raise ArrisConfigurationError("Interface selection requires standard HTTP")
+        socket_options.append(get_interface_socket_option(network_interface))
+
     session = requests.Session()
 
     # Only the request handler controls retries; adapters must not repeat logins.
@@ -1678,6 +1706,8 @@ def create_arris_compatible_session(
         if relaxed_http
         else HTTPAdapter(max_retries=0)
     )
+    if network_interface is not None:
+        adapter.poolmanager.connection_pool_kw["socket_options"] = socket_options
 
     session.mount("https://", adapter)
     session.mount("http://", adapter)
