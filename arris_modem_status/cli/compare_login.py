@@ -41,6 +41,8 @@ def compare_login(har: dict[str, Any], password: str, algorithm: str) -> dict[st
             login = json.loads(request.get("postData", {}).get("text", "")).get("Login", {})
         except (ValueError, AttributeError):
             continue
+        if not isinstance(login, dict):
+            continue
         if login.get("Action") == "request":
             challenge_entry = entry
         elif login.get("Action") == "login" and challenge_entry is not None:

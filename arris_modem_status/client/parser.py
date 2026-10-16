@@ -571,7 +571,7 @@ class HNAPResponseParser:
                         }
                     )
 
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, AttributeError, TypeError) as e:
                 logger.warning(f"Parse failed for {response_type}: {e}")
                 # Don't raise, continue with other responses
 
@@ -1108,4 +1108,4 @@ class HNAPResponseParser:
             logger.error(f"Error parsing system logs: {e}")
             # Return empty logs rather than raising
 
-        return log_entries
+        return sorted(log_entries, key=lambda entry: entry.timestamp)

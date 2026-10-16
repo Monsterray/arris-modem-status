@@ -4,13 +4,13 @@
 
 | Environment | Result |
 | --- | --- |
-| Python 3.9.25, clean temporary environment | 354 tests pass |
-| Python 3.10.22, clean temporary environment | 354 tests pass |
-| Python 3.11.15, clean temporary environment | 354 tests pass |
-| Python 3.12.13, clean temporary environment | 354 tests pass |
-| Python 3.13.14, clean temporary environment | 354 tests pass |
-| Python 3.14.7, development environment | 354 tests pass; 83.58% branch-inclusive coverage |
-| Extracted source archive, Python 3.11.15 | 354 tests pass |
+| Python 3.9.25, clean temporary environment | 495 tests pass |
+| Python 3.10.22, clean temporary environment | 495 tests pass |
+| Python 3.11.15, clean temporary environment | 495 tests pass |
+| Python 3.12.13, clean temporary environment | 495 tests pass |
+| Python 3.13.14, clean temporary environment | 495 tests pass |
+| Python 3.14.7, development environment | 495 tests pass; 99.80% branch-inclusive coverage |
+| Extracted source archive, Python 3.11.15 | 495 tests pass |
 | Installed wheel outside the checkout, Python 3.13.14 | Standard CLI, monitor, and offline comparison help work |
 | Wheel and source metadata | `twine check` passes |
 | Distribution contents | No `modem_pass`, HAR, or JSONL paths; source archive includes test fixtures and browser vectors |
@@ -85,11 +85,42 @@ Linux device binding has offline coverage only.
 
 ## Coverage and completion
 
-All 354 automated tests pass. Coverage is 83.58%, because some model helpers,
-log-retrieval paths, and rare failure branches are not exercised. Of the 256
-unexecuted statements, 113 are in `models.py`. This measurement is separate from
-network reachability and does not indicate a failing modem connection. The tests
-still block real TCP/DNS, so a passing suite cannot establish hardware stability.
+The full offline suite now passes 495 tests under the configured 99% coverage gate.
+
+| Measurement | Verified result |
+| --- | --- |
+| Combined line and branch coverage | 99.80% |
+| Executable statements | 1,876 / 1,876; 100% |
+| Branch outcomes | 577 / 582; 99.14% |
+| Required combined coverage | 99%, raised from 80% |
+
+No coverage exclusion rules were added or changed. Five branch outcomes remain:
+optional missing preflight error text, the zero-count guard after a nonempty error
+history, cleanup when the session is already absent, and empty duration/operation
+guards in instrumentation. These remain in the measured source.
+
+The added checks cover signal/error/performance model boundaries, actual client
+log retrieval and validation, malformed firmware and HAR inputs, redacted CLI
+failures, HTTP error policy, raw-socket cleanup, and diagnostic storage failures.
+They found and fixed:
+
+- `get_logs()` passed a dictionary to the raw log-string parser, losing all logs;
+  it now extracts the payload and the shared parser returns chronological entries.
+- Substring lock checks treated `Not Locked` as locked; channel validation now uses
+  the shared exact lock-state predicate.
+- Empty-message timeout exceptions bypassed configured status retries. Typed
+  timeouts now participate; login requests still never retry.
+- Raised HTTP 401/403 exceptions could bypass the authenticated denial policy;
+  the same stop policy now applies to returned responses and raised exceptions.
+- Malformed metadata could discard otherwise usable channel responses; malformed
+  HAR login objects could prevent offline comparison of a later valid flow.
+- Log-retrieval errors now preserve their original structured operation details.
+
+HTTP failure classification was consolidated to remove duplicate, unreachable
+handling while retaining response redaction and conservative login behavior.
+The test suite continues to block real TCP/DNS. No live modem request or real
+password-file read was needed for this coverage pass. Passing simulated tests
+does not establish sustained hardware stability.
 
 ## Hardware verification still required
 

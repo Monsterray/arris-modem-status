@@ -665,7 +665,8 @@ class ArrisModemStatusClient:
                 # Response is directly the log response
                 hnaps_response = data
 
-            log_entries = self.parser._parse_logs(hnaps_response)
+            log_response = hnaps_response.get("GetCustomerStatusLogResponse", {})
+            log_entries = self.parser._parse_logs(log_response.get("CustomerStatusLogList", ""))
 
             if self.instrumentation:
                 self.instrumentation.record_timing("log_parsing", parsing_start, success=True)
@@ -683,6 +684,7 @@ class ArrisModemStatusClient:
             ArrisConnectionError,
             ArrisTimeoutError,
             ArrisHTTPError,
+            ArrisOperationError,
         ) as e:
             # Re-raise our custom exceptions
             raise e
@@ -903,7 +905,7 @@ class ArrisModemStatusClient:
             # Enhanced validation
             channel_quality = {}
             if downstream_count > 0:
-                downstream_locked = sum(1 for ch in status["downstream_channels"] if "Locked" in ch.lock_status)
+                downstream_locked = sum(1 for ch in status["downstream_channels"] if ch.is_locked())
                 downstream_modulations = {
                     ch.modulation for ch in status["downstream_channels"] if ch.modulation != "Unknown"
                 }
@@ -916,7 +918,7 @@ class ArrisModemStatusClient:
                 }
 
             if upstream_count > 0:
-                upstream_locked = sum(1 for ch in status["upstream_channels"] if "Locked" in ch.lock_status)
+                upstream_locked = sum(1 for ch in status["upstream_channels"] if ch.is_locked())
                 upstream_modulations = {
                     ch.modulation for ch in status["upstream_channels"] if ch.modulation != "Unknown"
                 }

@@ -1063,8 +1063,10 @@ class HNAPRequestHandler:
                 # Check if this is a retryable error
                 error_str = str(e).lower()
                 is_timeout = isinstance(e, (requests.exceptions.Timeout, requests.exceptions.ConnectTimeout))
-                is_network_error = isinstance(e, requests.exceptions.ConnectionError) or any(
-                    term in error_str for term in ["timeout", "connection", "network"]
+                is_network_error = (
+                    is_timeout
+                    or isinstance(e, requests.exceptions.ConnectionError)
+                    or any(term in error_str for term in ["timeout", "connection", "network"])
                 )
 
                 # If it's a timeout and we've exhausted retries, raise TimeoutError
@@ -1083,74 +1085,44 @@ class HNAPRequestHandler:
                     port = int(self.base_url.split(":")[-1].split("/")[0])
                     raise wrap_connection_error(e, host, port) from e
 
-                # HTTP errors should not be retried - but for certain operations, return None instead of raising
-                if response_obj is not None:
-                    status_code = getattr(response_obj, "status_code", None)
-                    if status_code:
-                        # For non-critical operations (like status requests), return None instead of raising
-                        # This allows partial data retrieval to continue
-                        if soap_action in ["GetMultipleHNAPs", "GetCustomerStatusSoftware"] and status_code in [
-                            403,
-                            404,
-                            500,
-                        ]:
-                            logger.warning(
-                                f"HTTP {status_code} for {soap_action}, returning None to allow partial data retrieval"
-                            )
-                            return None
+                # Classify HTTP failures once, whether the status is on the response or message.
+                status_code = getattr(response_obj, "status_code", None)
+                if not status_code and isinstance(e, requests.exceptions.HTTPError):
+                    import re
 
-                        response_text = ""
-                        if response_obj is not None and hasattr(response_obj, "text") and response_obj.text is not None:
-                            response_text = str(response_obj.text)[:500]
-
-                        raise ArrisHTTPError(
-                            f"HTTP {status_code} error for {soap_action}",
-                            status_code=status_code,
-                            details={
-                                "operation": soap_action,
-                                "response_text": "<redacted>" if soap_action == "Login" else response_text,
-                            },
+                    match = re.search(r"(\d{3})", str(e))
+                    if match:
+                        status_code = int(match.group(1))
+                if status_code:
+                    if (
+                        authenticated
+                        and soap_action in {"Login", "GetMultipleHNAPs", "GetCustomerStatusSoftware"}
+                        and status_code in {401, 403}
+                    ):
+                        raise ArrisAuthenticationError(
+                            f"Modem denied authenticated request (HTTP {status_code}); stopped without logging in again",
+                            details={"operation": soap_action, "status_code": status_code},
                         ) from e
-
-                # Handle HTTPError specifically
-                if isinstance(e, requests.exceptions.HTTPError):
-                    status_code = None
-                    if e.response is not None:
-                        status_code = e.response.status_code
-                    elif response_obj is not None and hasattr(response_obj, "status_code"):
-                        status_code = response_obj.status_code
-                    else:
-                        # Try to parse from error message
-                        import re
-
-                        match = re.search(r"(\d{3})", str(e))
-                        if match:
-                            status_code = int(match.group(1))
-
-                    if status_code:
-                        # For non-critical operations, return None to allow partial data retrieval
-                        if soap_action in ["GetMultipleHNAPs", "GetCustomerStatusSoftware"] and status_code in [
-                            403,
-                            404,
-                            500,
-                        ]:
-                            logger.warning(
-                                f"HTTP {status_code} for {soap_action}, returning None to allow partial data retrieval"
-                            )
-                            return None
-
-                        response_text = ""
-                        if response_obj is not None and hasattr(response_obj, "text") and response_obj.text is not None:
-                            response_text = str(response_obj.text)[:500]
-
-                        raise ArrisHTTPError(
-                            f"HTTP {status_code} error for {soap_action}",
-                            status_code=status_code,
-                            details={
-                                "operation": soap_action,
-                                "response_text": "<redacted>" if soap_action == "Login" else str(e)[:500],
-                            },
-                        ) from e
+                    if soap_action in {"GetMultipleHNAPs", "GetCustomerStatusSoftware"} and status_code in {
+                        403,
+                        404,
+                        500,
+                    }:
+                        logger.warning(
+                            f"HTTP {status_code} for {soap_action}, returning None to allow partial data retrieval"
+                        )
+                        return None
+                    response_text = (
+                        str(getattr(response_obj, "text", "") or "")[:500] if response_obj is not None else str(e)[:500]
+                    )
+                    raise ArrisHTTPError(
+                        f"HTTP {status_code} error for {soap_action}",
+                        status_code=status_code,
+                        details={
+                            "operation": soap_action,
+                            "response_text": "<redacted>" if soap_action == "Login" else response_text,
+                        },
+                    ) from e
 
                 # For network/timeout errors, check if we should retry
                 if is_network_error:
@@ -1158,11 +1130,6 @@ class HNAPRequestHandler:
 
                     if attempt < retry_limit:
                         continue
-                    # For connection errors at the end, raise ArrisConnectionError
-                    if isinstance(e, requests.exceptions.ConnectionError) and not is_timeout:
-                        host = self.base_url.split("://")[1].split(":")[0]
-                        port = int(self.base_url.split(":")[-1].split("/")[0])
-                        raise wrap_connection_error(e, host, port) from e
                 else:
                     # Re-raise non-retryable errors
                     raise
