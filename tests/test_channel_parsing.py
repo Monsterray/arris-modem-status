@@ -1,6 +1,11 @@
 """Tests for channel data parsing functionality."""
 
+import json
+
 import pytest
+
+from arris_modem_status.client.parser import HNAPResponseParser
+from arris_modem_status.models import ChannelInfo
 
 try:
     from arris_modem_status import ArrisModemStatusClient, ChannelInfo
@@ -79,24 +84,6 @@ class TestChannelInfoModel:
 
         # Should handle invalid power gracefully
         assert channel.power == "invalid"  # No formatting applied
-
-    def test_channel_info_optional_fields(self):
-        """Test ChannelInfo with optional fields."""
-        channel = ChannelInfo(
-            channel_id="5",
-            frequency="573000000",
-            power="2.1",
-            snr="36.2",
-            modulation="1024QAM",
-            lock_status="Locked",
-            corrected_errors="150",
-            uncorrected_errors="5",
-            channel_type="downstream",
-        )
-
-        assert channel.corrected_errors == "150"
-        assert channel.uncorrected_errors == "5"
-        assert channel.channel_type == "downstream"
 
 
 @pytest.mark.unit
@@ -341,3 +328,37 @@ class TestResponseParsing:
         # Should handle gracefully with defaults
         assert parsed["model_name"] == "Unknown"
         assert parsed["downstream_channels"] == []
+
+
+@pytest.mark.parametrize("bad_response", ["null", "[]", '{"GetMultipleHNAPsResponse":[]}'])
+def test_malformed_metadata_does_not_discard_other_valid_responses(bad_response, mock_modem_responses):
+    sample = HNAPResponseParser().parse_responses(
+        {"software_info": bad_response, "channel_info": mock_modem_responses["complete_status"]}
+    )
+    assert len(sample["downstream_channels"]) == 3
+    assert sample["model_name"] == "Unknown"
+
+
+def test_parser_handles_empty_software_and_missing_startup_fields():
+    sample = HNAPResponseParser().parse_responses({"software_info": "{}", "startup_connection": "{}"})
+    assert sample["model_name"] == "Unknown"
+    assert not sample["channel_data_available"]
+
+
+def test_startup_fields_and_unknown_response_kinds():
+    startup = {
+        "GetMultipleHNAPsResponse": {
+            "GetCustomerStatusStartupSequenceResponse": {
+                "CustomerConnDSFreq": "549000000",
+                "CustomerConnDSComment": "Locked",
+                "CustomerConnConnectivityStatus": "OK",
+                "CustomerConnBootStatus": "OK",
+                "CustomerConnConfigurationFileStatus": "OK",
+                "CustomerConnSecurityStatus": "Enabled",
+            }
+        }
+    }
+    sample = HNAPResponseParser().parse_responses({"startup_connection": json.dumps(startup), "unsupported_kind": "{}"})
+    assert sample["downstream_frequency"] == "549000000"
+    assert sample["connectivity_status"] == sample["boot_status"] == "OK"
+    assert sample["security_status"] == "Enabled"

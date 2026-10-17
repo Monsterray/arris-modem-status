@@ -53,8 +53,8 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
         client_class = ArrisModemStatusClient
 
     # Get optimal timeouts based on host type
-    connect_timeout, read_timeout = get_optimal_timeouts(args.host)
-    final_timeout = (connect_timeout, min(args.timeout, read_timeout))
+    connect_timeout, _ = get_optimal_timeouts(args.host)
+    final_timeout = (min(connect_timeout, args.timeout), args.timeout)
 
     logger.info(f"Initializing ArrisModemStatusClient for {args.host}:{args.port}")
 
@@ -65,14 +65,14 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
     password = os.environ.get("ARRIS_PW", None)
     if args.password_file is not None:
         if args.password_file.exists():
-            with open(args.password_file) as handle:
-                password = handle.readline().strip()
+            with open(args.password_file, encoding="utf-8") as handle:
+                password = handle.readline().rstrip("\r\n")
         else:
-            print(f"❌ Password file {args.password_file} does not exist")
+            print(f"❌ Password file {args.password_file} does not exist", file=sys.stderr)
             sys.exit(1)
     if args.password is not None:
         password = args.password
-    if password is None and os.isatty(sys.stdout.fileno()):
+    if password is None and sys.stdout.isatty():
         password = getpass(prompt=f"{args.username} password: ")
 
     if password is None:
@@ -88,6 +88,9 @@ def create_client(args: Any, client_class: Optional[type[ArrisModemStatusClient]
         max_workers=args.workers,
         max_retries=args.retries,
         timeout=final_timeout,
+        hmac_algorithm=getattr(args, "hmac_algorithm", "sha256"),
+        relaxed_http=getattr(args, "relaxed_http", False),
+        network_interface=getattr(args, "interface", None),
     )
 
 
@@ -104,7 +107,12 @@ def perform_connectivity_check(args: Any) -> bool:
     if not args.quick_check:
         return True
 
-    is_reachable, error_msg = quick_connectivity_check(args.host, args.port, timeout=2.0)
+    if getattr(args, "interface", None):
+        is_reachable, error_msg = quick_connectivity_check(
+            args.host, args.port, timeout=2.0, network_interface=args.interface
+        )
+    else:
+        is_reachable, error_msg = quick_connectivity_check(args.host, args.port, timeout=2.0)
 
     if not is_reachable:
         print(f"❌ {error_msg}", file=sys.stderr)
@@ -129,7 +137,7 @@ def process_modem_status(
     """
     # Get the modem status
     with client:
-        status = client.get_status()
+        status = client.get_status(channels_only=True) if getattr(args, "channels_only", False) else client.get_status()
 
     # Calculate elapsed time
     elapsed = time.time() - start_time

@@ -1,5 +1,159 @@
 # arris-modem-status 🚀
 
+## Monsterray fork
+
+This fork fixes reproducible authentication and CLI bugs: signed login requests,
+exact login-result validation, cleared authentication state before reauthentication,
+honored request timeouts, and password-file errors on stderr. Regression tests also
+verify that repeated status polls reuse the authenticated client session.
+
+Install the fixes from the working branch:
+
+```bash
+python -m pip install 'git+https://github.com/Monsterray/arris-modem-status.git@fix/authentication-and-cli'
+arris-modem-status --password-file /path/to/modem-password --quiet --timeout 30
+```
+
+The remaining type-check errors are also fixed. HNAP authentication now supports
+explicit `md5` and `sha256` firmware variants; SHA256 remains the library default.
+The firmware test results below are inherited from upstream. A controlled S33v2
+sample using MD5 and the physical LAN interface returned `LoginResult: OK`, all
+four status responses, 34 downstream channels, and four upstream channels. Earlier
+timeouts were traced to the Mac's default route through a VPN tunnel. Sustained
+modem stability remains unverified.
+
+The client now uses standard HTTP by default, loads the public login page to seed
+cookies, and sends browser-style headers. `relaxed_http=True` in Python or the
+monitor's `--relaxed-http` option selects legacy raw-socket parsing for firmware
+that requires it. HTTP adapters do not perform hidden retries; the conservative
+monitor also sets request-handler retries to zero.
+
+See [the source comparison and improvement roadmap](docs/monitoring-research.md)
+for the nine repositories reviewed, pinned source references, and hardware-test limits.
+See [testing results and remaining hardware checks](docs/testing.md) for the
+compatibility matrix, package validation, and reproducible regression commands.
+The offline suite reaches 99.76% combined coverage (100% line coverage), and the
+configured gate requires at least 99%; no new coverage exclusions were introduced.
+
+### Flint 2 router tools
+
+Optional checkout tools collect status from the GL.iNet web panel and LuCI, and
+run finite HTTPS transfer benchmarks on the router through LuCI or optional SSH.
+Credentials are entered locally, encrypted in `.secrets/flint2/`, and unlocked
+using a separate key in macOS Keychain. Status reports go to private, Git-ignored
+`router-data/` files. These tools do not change router settings or install packages.
+
+See [Flint 2 setup, credentials, and baseline testing](docs/flint2-testing.md)
+for commands, certificate verification, bandwidth use, and remaining live checks.
+Install their optional dependencies with `python -m pip install -e '.[flint2]'`.
+`python -m scripts.flint2_audit` captures a redacted settings inventory through
+LuCI without SSH or shell execution.
+
+### Conservative S33v2 sampling
+
+Open `https://192.168.100.1/Login.html` from a computer behind your router. Confirm
+the password with the modem's normal interface before using the script. Determine
+the hash algorithm by inspecting the public `js/Login.js` and `js/SOAP/SOAPAction.js`
+scripts: `hex_hmac_md5` means `md5`; `hex_hmac_sha256` means `sha256`. Firmware varies,
+so do not discover the algorithm by repeatedly attempting logins. A reported S33v2
+used MD5 and became stable after session-handling fixes in another monitor
+([report and follow-up](https://github.com/solentlabs/cable_modem_monitor/issues/117)).
+
+For MD5 firmware, collect one sample with a locally prompted password:
+
+```bash
+python -m arris_modem_status.cli.monitor --host 192.168.100.1 --hmac-algorithm md5 > modem-sample.jsonl
+```
+
+After confirming successful data collection, a bounded monitoring run is:
+
+```bash
+python -m arris_modem_status.cli.monitor --host 192.168.100.1 --hmac-algorithm md5 --samples 3 --interval 900 > modem-samples.jsonl
+```
+
+The monitor defaults to one sample and enforces at least 15 minutes between samples.
+It reuses one authenticated client, sends serial requests, disables request retries
+and performance-history accumulation, skips event-log queries, and exits on a failed
+or incomplete sample. It does not automatically reauthenticate or reboot the modem.
+If the session expires, stop and investigate before starting a new run. Ctrl-C stops
+sampling. An optional `--password-file` reads the first line of a local credential
+file; protect that file with owner-only permissions.
+
+For lower-load signal collection, add `--channels-only`. It fetches downstream
+and upstream channels together in one status request instead of four; software,
+startup, registration, and event-log queries are omitted. Fields supplied only by
+those metadata queries may show `Unknown` in this mode.
+
+```bash
+python -m arris_modem_status.cli.monitor --hmac-algorithm md5 --password-file modem_pass --channels-only
+```
+
+The standard `arris-modem-status` entry point also supports `--hmac-algorithm`,
+`--channels-only`, and `--relaxed-http`. Confirm the firmware's hash algorithm
+before using either entry point; the standard CLI retains SHA256 as its default.
+
+Login POSTs are attempted once even when status retries are configured. HNAP
+redirects are refused. A rejected session, malformed challenge, or uncertain login
+result blocks further authentication on that client and discards its session keys
+and cookies. After checking the modem, explicitly create a new client to proceed;
+do not wrap authentication failure in an automatic process-restart loop. A status
+connection failure preserves the existing session and stops the query batch.
+In concurrent mode, queued work is cancelled; requests already in flight may finish.
+
+Authentication errors report recognized outcome codes instead of response bodies
+that might contain session secrets. Connectivity errors give connectivity guidance.
+The automated test suite blocks unmocked TCP connections and DNS lookups, so it
+cannot query the physical modem accidentally.
+
+Passwords are literal Unicode text: `$`, `@`, `!`, quotes, backslashes, and leading
+or trailing spaces are preserved. At the interactive password prompt, type the
+password exactly as it is; do not add shell quotes or escape characters. UTF-8
+password files preserve spaces and punctuation and remove only the first line's
+line ending. The first-line format does not represent multiline passwords.
+Avoid placing passwords directly in shell commands, where the shell can expand
+characters before Python receives them and may save them in command history.
+
+Run only one collector and leave other modem scrapers disabled during validation.
+Separate CLI invocations each create a new login session, so avoid scheduling them
+as frequent cron jobs. Increasing the interval is a conservative choice, not a
+guarantee against firmware crashes. Check uptime and connection stability before
+extending the monitoring period.
+
+### VPN routing
+
+If a VPN captures the modem route, select the physical LAN interface explicitly:
+
+```bash
+python -m arris_modem_status.cli.monitor --hmac-algorithm md5 --password-file modem_pass --interface en0
+```
+
+On the tested Mac, the default route through `utun7` timed out while the same
+anonymous request bound to `en0` returned HTTP 200. The collector then authenticated
+and collected its first full status sample through `en0`. Interface names are
+machine-specific; selection is explicit rather than automatic.
+
+Both CLI entry points support `--interface`; the standard CLI's `--quick-check`
+uses the same selected interface. Binding affects only the collector's sockets and
+does not change system routes or disable the VPN. It requires standard HTTP.
+macOS binding currently targets IPv4; Linux uses device binding, which may require
+appropriate OS privileges. Linux binding has offline coverage, not a live device test.
+
+### Offline browser-login comparison
+
+For future firmware-specific login failures, save one successful browser login's
+Network capture as a HAR file and keep it local. HAR files can contain session
+credentials; do not upload or commit the raw capture. Compare it without sending
+any modem requests:
+
+```bash
+python -m arris_modem_status.cli.compare_login --har /path/to/browser-login.har --hmac-algorithm md5
+```
+
+The command prompts for the password locally and outputs only whether the browser
+login succeeded and whether the password hash, signatures, and cookies match.
+No credential values are printed. Independent test vectors generated by the modem's
+actual MD5 JavaScript verify punctuation, Unicode, spaces, and long HMAC keys.
+
 [![Quality Check](https://github.com/csmarshall/arris-modem-status/actions/workflows/quality-check.yml/badge.svg)](https://github.com/csmarshall/arris-modem-status/actions/workflows/quality-check.yml)
 [![codecov](https://codecov.io/gh/csmarshall/arris-modem-status/branch/main/graph/badge.svg)](https://codecov.io/gh/csmarshall/arris-modem-status)
 [![PyPI version](https://badge.fury.io/py/arris-modem-status.svg)](https://badge.fury.io/py/arris-modem-status)

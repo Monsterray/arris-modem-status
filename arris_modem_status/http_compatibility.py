@@ -252,6 +252,7 @@ import contextlib
 import logging
 import socket
 import ssl
+import sys
 import time
 import warnings
 from collections.abc import Mapping
@@ -261,15 +262,15 @@ import requests
 import urllib3
 from requests.adapters import HTTPAdapter
 from requests.models import Response
+from urllib3.connection import HTTPConnection
 from urllib3.exceptions import InsecureRequestWarning
-from urllib3.util.retry import Retry
 
 try:
     from arris_modem_status import __version__
 except ImportError:
     __version__ = "1.0.0"  # Fallback version
 
-from arris_modem_status.exceptions import ArrisConnectionError, ArrisTimeoutError
+from arris_modem_status.exceptions import ArrisConfigurationError, ArrisConnectionError, ArrisTimeoutError
 
 # Configure HTTP compatibility warnings suppression
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -846,7 +847,9 @@ class ArrisCompatibleHTTPAdapter(HTTPAdapter):
 
         # For non-HNAP endpoints, use standard urllib3 processing
         try:
-            response = super().send(request, stream, timeout, verify, cert, proxies)
+            response = super().send(
+                request, stream, timeout, verify, cert, dict(proxies) if proxies is not None else None
+            )
 
             if self.instrumentation:
                 response_size = len(response.content) if hasattr(response, "content") else 0
@@ -1130,7 +1133,8 @@ class ArrisCompatibleHTTPAdapter(HTTPAdapter):
         # Add headers, but skip Content-Length as we'll calculate it ourselves
         for name, value in request.headers.items():
             if name.lower() != "content-length":  # Skip Content-Length
-                lines.append(f"{name}: {value}")
+                header_value = value.decode("latin-1") if isinstance(value, bytes) else value
+                lines.append(f"{name}: {header_value}")
 
         # Add body length if present
         if request.body:
@@ -1424,7 +1428,27 @@ class ArrisCompatibleHTTPAdapter(HTTPAdapter):
             return response
 
 
-def create_arris_compatible_session(instrumentation: Optional[Any] = None) -> requests.Session:
+def get_interface_socket_option(network_interface: str) -> tuple[int, int, Union[int, bytes]]:
+    """Bind one socket to an explicit interface without changing system routing."""
+    try:
+        interface_index = socket.if_nametoindex(network_interface)
+    except (OSError, ValueError) as error:
+        raise ArrisConfigurationError("Unknown network interface", details={"interface": network_interface}) from error
+    platform_name = sys.platform
+    if platform_name == "darwin":
+        # Darwin netinet/in.h defines IP_BOUND_IF=25; Python does not expose it.
+        return socket.IPPROTO_IP, 25, interface_index
+    if platform_name.startswith("linux"):
+        device_option = getattr(socket, "SO_BINDTODEVICE", None)
+        if device_option is None:
+            raise ArrisConfigurationError("Device binding is unavailable in this Python runtime")
+        return socket.SOL_SOCKET, device_option, network_interface.encode() + b"\0"
+    raise ArrisConfigurationError("Interface selection is supported on macOS and Linux")
+
+
+def create_arris_compatible_session(
+    instrumentation: Optional[Any] = None, relaxed_http: bool = True, network_interface: Optional[str] = None
+) -> requests.Session:
     """
     Create a requests Session optimized for maximum Arris modem compatibility and reliability.
 
@@ -1448,6 +1472,8 @@ def create_arris_compatible_session(instrumentation: Optional[Any] = None) -> re
         **Monitoring Integration**: Optional performance instrumentation for operational visibility
 
     Args:
+        relaxed_http: Use the legacy raw-socket transport; disable for interface binding.
+        network_interface: Explicit modem interface on macOS/Linux; macOS binding uses IPv4.
         instrumentation: Optional PerformanceInstrumentation instance for detailed
                         monitoring and performance analysis. When provided, the session
                         automatically records comprehensive metrics including:
@@ -1666,31 +1692,29 @@ def create_arris_compatible_session(instrumentation: Optional[Any] = None) -> re
         The configuration prioritizes compatibility and reliability over strict
         protocol adherence and performance optimization.
     """
+    socket_options = list(HTTPConnection.default_socket_options)
+    if network_interface is not None:
+        if relaxed_http:
+            raise ArrisConfigurationError("Interface selection requires standard HTTP")
+        socket_options.append(get_interface_socket_option(network_interface))
+
     session = requests.Session()
 
-    # Conservative retry strategy
-    retry_strategy = Retry(
-        total=2,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["POST", "GET"],
-        backoff_factor=0.3,
-        respect_retry_after_header=False,
+    # Only the request handler controls retries; adapters must not repeat logins.
+    adapter = (
+        ArrisCompatibleHTTPAdapter(instrumentation=instrumentation, max_retries=0)
+        if relaxed_http
+        else HTTPAdapter(max_retries=0)
     )
-
-    # Use the Arris-compatible adapter with relaxed parsing
-    adapter = ArrisCompatibleHTTPAdapter(
-        instrumentation=instrumentation,
-        pool_connections=1,
-        pool_maxsize=5,
-        max_retries=retry_strategy,
-        pool_block=False,
-    )
+    if network_interface is not None:
+        adapter.poolmanager.connection_pool_kw["socket_options"] = socket_options
 
     session.mount("https://", adapter)
     session.mount("http://", adapter)
 
     # Session configuration
     session.verify = False
+    session.trust_env = False
     session.headers.update(
         {
             "User-Agent": "ArrisModemStatusClient/{__version__}-Compatible",

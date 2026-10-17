@@ -128,14 +128,13 @@ Author: Charles Marshall
 License: MIT
 """
 
-import hashlib
 import hmac
 import json
 import logging
 import time
 from typing import Optional, Tuple
 
-from arris_modem_status.exceptions import ArrisParsingError
+from arris_modem_status.exceptions import ArrisConfigurationError, ArrisParsingError
 
 logger = logging.getLogger("arris-modem-status")
 
@@ -143,19 +142,24 @@ logger = logging.getLogger("arris-modem-status")
 class HNAPAuthenticator:
     """Handles HNAP authentication for Arris modems."""
 
-    def __init__(self, username: str, password: str):
+    def __init__(self, username: str, password: str, hmac_algorithm: str = "sha256"):
         """
         Initialize HNAP authenticator.
 
         Args:
             username: Login username
             password: Login password
+            hmac_algorithm: Firmware HNAP hash algorithm (sha256 or md5)
         """
+        if hmac_algorithm not in {"sha256", "md5"}:
+            raise ArrisConfigurationError("HNAP hash algorithm must be sha256 or md5")
+        self.hmac_algorithm = hmac_algorithm
         self.username = username
         self.password = password
         self.private_key: Optional[str] = None
         self.uid_cookie: Optional[str] = None
         self.authenticated: bool = False
+        self.last_login_result: Optional[str] = None
 
     def generate_auth_token(self, soap_action: str, timestamp: Optional[int] = None) -> str:
         """
@@ -218,7 +222,7 @@ class HNAPAuthenticator:
             hmac.new(
                 hmac_key.encode("utf-8"),
                 message.encode("utf-8"),
-                hashlib.sha256,
+                self.hmac_algorithm,
             )
             .hexdigest()
             .upper()
@@ -267,17 +271,25 @@ class HNAPAuthenticator:
         try:
             data = json.loads(response_text)
             login_resp = data["LoginResponse"]
+            if "LoginResult" in login_resp:
+                result = login_resp["LoginResult"]
+                if not isinstance(result, str) or result.upper() not in {"SUCCESS", "OK", "TRUE"}:
+                    raise ValueError("Challenge request was rejected")
             challenge = login_resp["Challenge"]
             public_key = login_resp["PublicKey"]
             uid_cookie = login_resp.get("Cookie")
+            if not all(isinstance(value, str) and value for value in (challenge, public_key)):
+                raise ValueError("Challenge and PublicKey must be nonempty strings")
+            if uid_cookie is not None and not isinstance(uid_cookie, str):
+                raise ValueError("Cookie must be a string when present")
 
             return challenge, public_key, uid_cookie
 
-        except (json.JSONDecodeError, KeyError) as e:
+        except (ValueError, KeyError, TypeError) as e:
             logger.error(f"Challenge parsing failed: {e}")
             raise ArrisParsingError(
                 "Failed to parse authentication challenge response",
-                details={"phase": "challenge", "parse_error": str(e), "response": response_text[:200]},
+                details={"phase": "challenge", "parse_error": str(e), "response_length": len(response_text)},
             ) from e
 
     def compute_credentials(self, challenge: str, public_key: str) -> str:
@@ -331,7 +343,7 @@ class HNAPAuthenticator:
             hmac.new(
                 key_material.encode("utf-8"),
                 challenge.encode("utf-8"),
-                hashlib.sha256,
+                self.hmac_algorithm,
             )
             .hexdigest()
             .upper()
@@ -342,7 +354,7 @@ class HNAPAuthenticator:
             hmac.new(
                 self.private_key.encode("utf-8"),
                 challenge.encode("utf-8"),
-                hashlib.sha256,
+                self.hmac_algorithm,
             )
             .hexdigest()
             .upper()
@@ -382,7 +394,19 @@ class HNAPAuthenticator:
         Returns:
             True if login successful, False otherwise
         """
-        if response_text and any(term in response_text.lower() for term in ["success", "ok", "true"]):
-            self.authenticated = True
-            return True
-        return False
+        self.authenticated = False
+        self.last_login_result = None
+        try:
+            data = json.loads(response_text)
+            result = data["LoginResponse"]["LoginResult"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return False
+        if isinstance(result, str):
+            normalized = result.upper()
+            self.last_login_result = (
+                normalized
+                if normalized in {"SUCCESS", "OK", "TRUE", "FAILED", "RELOAD", "REBOOT", "LOCKUP", "OK_CHANGED"}
+                else "UNRECOGNIZED"
+            )
+        self.authenticated = self.last_login_result in {"SUCCESS", "OK", "TRUE"}
+        return self.authenticated

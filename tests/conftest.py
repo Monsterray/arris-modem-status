@@ -1,8 +1,28 @@
 import json
-import time
-from unittest.mock import MagicMock, Mock, patch
+import logging
+from unittest.mock import Mock, patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def block_network_connections(monkeypatch):
+    """Automated tests must never contact a physical modem or external service."""
+
+    def denied(*args, **kwargs):
+        pytest.fail("Network I/O is forbidden in automated tests; mock the transport")
+
+    monkeypatch.setattr("socket.socket.connect", denied)
+    monkeypatch.setattr("socket.socket.connect_ex", denied)
+    monkeypatch.setattr("socket.getaddrinfo", denied)
+
+
+@pytest.fixture(autouse=True)
+def mock_login_page(monkeypatch):
+    """Keep authentication unit tests offline while simulating the public login page."""
+    get = Mock(return_value=Mock(status_code=200))
+    monkeypatch.setattr("requests.Session.get", get)
+    return get
 
 
 @pytest.fixture
@@ -77,35 +97,10 @@ def mock_modem_responses():
 
 
 @pytest.fixture
-def mock_http_session():
-    """Mock HTTP session for testing."""
-    session = MagicMock()
-    session.post = MagicMock()
-    session.close = MagicMock()
-    session.verify = False
-    session.headers = {}
-    return session
-
-
-@pytest.fixture
-def mock_successful_auth_flow(mock_modem_responses):
-    """Mock successful authentication flow."""
-    with patch("requests.Session.post") as mock_post:
-        mock_post.side_effect = [
-            Mock(
-                status_code=200,
-                text=mock_modem_responses["challenge_response"],
-            ),
-            Mock(status_code=200, text=mock_modem_responses["login_success"]),
-        ]
-        yield mock_post
-
-
-@pytest.fixture
 def mock_successful_status_flow(mock_modem_responses):
     """Mock successful complete status flow."""
     with patch("requests.Session.post") as mock_post:
-        # Auth flow + 4 status requests (now includes software_info)
+        # Auth flow followed by all five status requests, including event logs.
         mock_post.side_effect = [
             Mock(
                 status_code=200,
@@ -116,6 +111,7 @@ def mock_successful_status_flow(mock_modem_responses):
             Mock(status_code=200, text=mock_modem_responses["complete_status"]),  # startup_connection
             Mock(status_code=200, text=mock_modem_responses["complete_status"]),  # internet_register
             Mock(status_code=200, text=mock_modem_responses["complete_status"]),  # channel_info
+            Mock(status_code=200, text='{"GetCustomerStatusLogResponse": {"CustomerStatusLogList": ""}}'),
         ]
         yield mock_post
 
@@ -149,15 +145,15 @@ def client_kwargs():
     }
 
 
-@pytest.fixture
-def mock_performance_instrumentation():
-    """Mock performance instrumentation."""
-    from arris_modem_status.instrumentation import PerformanceInstrumentation
-
-    with (
-        patch.object(PerformanceInstrumentation, "start_timer") as mock_start,
-        patch.object(PerformanceInstrumentation, "record_timing") as mock_record,
-    ):
-        mock_start.return_value = time.time()
-        mock_record.return_value = Mock(operation="test", duration=0.1, success=True, duration_ms=100)
-        yield mock_start, mock_record
+@pytest.fixture(autouse=True)
+def preserve_cli_logging():
+    """Restore handlers before pytest closes the CLI's captured stderr stream."""
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    yield
+    for handler in root.handlers[:]:
+        if handler not in handlers:
+            root.removeHandler(handler)
+            handler.close()
+    root.handlers = handlers
+    root.setLevel(level)

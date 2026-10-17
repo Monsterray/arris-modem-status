@@ -43,6 +43,9 @@ coverage.xml
 *.cover
 
 # Captured data and analysis files
+modem_pass
+modem-*.jsonl
+*.har
 selenium_hnap_capture.json
 deep_capture.har
 deep_capture.json
@@ -77,3 +80,8 @@ build/
 requirements.txt
 requirements-dev.txt
 interrogate_badge.svg
+
+# Local router credentials and private diagnostic captures
+.secrets/
+router-data/
+modem-*.json

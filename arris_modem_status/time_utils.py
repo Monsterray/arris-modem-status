@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 # Compiled regex patterns for duration parsing - compiled once for performance
 DURATION_PATTERN_1 = re.compile(r"(\d+)\s+days?\s+(\d+):(\d+):(\d+)")  # "7 days 14:23:56"
-DURATION_PATTERN_2 = re.compile(r"(\d+)\s+day\(s\)\s+(\d+)h:(\d+)m:(\d+)s")  # "27 day(s) 10h:12m:37s"
+DURATION_PATTERN_2 = re.compile(r"(\d+)\s+day(?:\(s\)|s)?\s+(\d+)h:(\d+)m:(\d+)s")
 
 
 def parse_modem_datetime(date_str: str) -> Optional[datetime]:
@@ -284,7 +284,7 @@ def enhance_status_with_time_fields(status_data: dict) -> dict:
 
         # Parse to timedelta object
         parsed_duration = parse_modem_duration(uptime_str)
-        if parsed_duration:
+        if parsed_duration is not None:
             enhanced_data["system_uptime-datetime"] = parsed_duration
             enhanced_data["system_uptime-seconds"] = timedelta_to_seconds(parsed_duration)
             logger.debug(

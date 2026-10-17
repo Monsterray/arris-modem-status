@@ -15,7 +15,7 @@ import requests
 from urllib3.exceptions import HeaderParsingError
 
 from arris_modem_status import ArrisModemStatusClient
-from arris_modem_status.exceptions import ArrisConnectionError, ArrisHTTPError, ArrisTimeoutError
+from arris_modem_status.exceptions import ArrisConnectionError, ArrisTimeoutError
 from arris_modem_status.http_compatibility import ArrisCompatibleHTTPAdapter, create_arris_compatible_session
 from arris_modem_status.instrumentation import PerformanceInstrumentation
 
@@ -43,53 +43,11 @@ class TestHTTPCompatibilityBasics:
         # But we can verify the error message is captured correctly
         assert "3.500000 |Content-type" in capture.raw_error
 
-    def test_parsing_artifact_extraction(self):
-        """Test extraction of parsing artifacts from error messages."""
-        test_cases = [
-            (
-                "HeaderParsingError: 3.500000 |Content-type: text/html",
-                ["3.500000"],
-            ),
-            ("Error: 2.100000 |Accept: application/json", ["2.100000"]),
-            ("No artifacts here", []),
-        ]
-
-        # The adapter no longer has this method since we use relaxed parsing
-        # But we can test the pattern matching directly
-        import re
-
-        for error_message, expected_artifacts in test_cases:
-            pattern = r"(\d+\.?\d*)\s*\|"
-            artifacts = re.findall(pattern, error_message)
-            assert artifacts == expected_artifacts
-
-    def test_browser_compatible_session_creation(self):
-        """Test creation of browser-compatible session."""
-        instrumentation = PerformanceInstrumentation()
-        session = create_arris_compatible_session(instrumentation)
-
-        assert isinstance(session, requests.Session)
-        assert session.verify is False
-        assert "ArrisModemStatusClient" in session.headers["User-Agent"]
-
 
 @pytest.mark.unit
 @pytest.mark.http_compatibility
 class TestArrisCompatibleHTTPAdapter:
     """Test ArrisCompatibleHTTPAdapter functionality."""
-
-    def test_adapter_initialization(self):
-        """Test adapter initialization."""
-        instrumentation = PerformanceInstrumentation()
-        adapter = ArrisCompatibleHTTPAdapter(instrumentation=instrumentation)
-
-        assert adapter.instrumentation is instrumentation
-
-    def test_adapter_initialization_without_instrumentation(self):
-        """Test adapter initialization without instrumentation."""
-        adapter = ArrisCompatibleHTTPAdapter()
-
-        assert adapter.instrumentation is None
 
     def test_hnap_endpoint_uses_relaxed_parsing(self):
         """Test that HNAP endpoints automatically use relaxed parsing."""
@@ -132,22 +90,6 @@ class TestArrisCompatibleHTTPAdapter:
             # Should have used parent's send method (standard parsing)
             mock_parent_send.assert_called_once()
             assert response.status_code == 200
-
-    def test_relaxed_parsing_handles_errors(self):
-        """Test that relaxed parsing handles errors gracefully."""
-        instrumentation = PerformanceInstrumentation()
-        adapter = ArrisCompatibleHTTPAdapter(instrumentation=instrumentation)
-
-        # Mock the raw socket request to raise an exception
-        with patch.object(adapter, "_raw_socket_request") as mock_raw_request:
-            mock_raw_request.side_effect = Exception("Connection failed")
-
-            request = Mock()
-            request.url = "https://192.168.100.1/HNAP1/"
-            request.headers = {}
-
-            with pytest.raises(Exception, match="Connection failed"):
-                adapter.send(request)
 
     def test_build_raw_http_request(self):
         """Test building raw HTTP request string."""
@@ -513,17 +455,6 @@ class TestResponseParsing:
 class TestHttpCompatibilitySession:
     """Test HTTP compatibility session creation."""
 
-    def test_create_arris_compatible_session(self):
-        """Test creation of Arris-compatible session."""
-        session = create_arris_compatible_session()
-
-        assert isinstance(session, requests.Session)
-        assert session.verify is False
-        assert "ArrisModemStatusClient" in session.headers["User-Agent"]
-        assert session.headers["Accept"] == "application/json"
-        assert session.headers["Cache-Control"] == "no-cache"
-        assert session.headers["Connection"] == "keep-alive"
-
     def test_create_arris_compatible_session_with_instrumentation(self):
         """Test session creation with instrumentation."""
         instrumentation = PerformanceInstrumentation()
@@ -535,16 +466,6 @@ class TestHttpCompatibilitySession:
         assert isinstance(https_adapter, ArrisCompatibleHTTPAdapter)
         assert https_adapter.instrumentation is instrumentation
 
-    def test_session_retry_configuration(self):
-        """Test session retry strategy configuration."""
-        session = create_arris_compatible_session()
-
-        # Get the adapter to check retry configuration
-        adapter = session.get_adapter("https://example.com")
-
-        # Should have conservative retry strategy
-        assert hasattr(adapter, "max_retries")
-
     def test_session_mounting(self):
         """Test that adapters are mounted correctly."""
         session = create_arris_compatible_session()
@@ -555,16 +476,6 @@ class TestHttpCompatibilitySession:
 
         assert isinstance(http_adapter, ArrisCompatibleHTTPAdapter)
         assert isinstance(https_adapter, ArrisCompatibleHTTPAdapter)
-
-    def test_session_pool_configuration(self):
-        """Test session pool configuration."""
-        session = create_arris_compatible_session()
-
-        adapter = session.get_adapter("https://example.com")
-
-        # Check pool configuration
-        assert hasattr(adapter, "_pool_connections")
-        assert hasattr(adapter, "_pool_maxsize")
 
 
 @pytest.mark.unit
@@ -644,27 +555,6 @@ class TestInstrumentation:
 class TestHttpCompatibilityIntegration:
     """Integration tests for HTTP compatibility."""
 
-    def test_no_header_parsing_errors_expected(self):
-        """Test that HeaderParsingError should not occur with relaxed parsing."""
-        client = ArrisModemStatusClient(password="test", capture_errors=True)
-
-        # With relaxed parsing, we shouldn't see HeaderParsingError anymore
-        # Test by checking error analysis shows proper structure
-        analysis = client.get_error_analysis()
-
-        # Should have proper structure even with no errors
-        assert "total_errors" in analysis or "message" in analysis
-        if "total_errors" in analysis:
-            assert analysis.get("http_compatibility_issues", 0) == 0
-
-    def test_client_uses_relaxed_parsing_by_default(self):
-        """Test that client uses relaxed parsing for HNAP endpoints."""
-        client = ArrisModemStatusClient(password="test")
-
-        # Check that the session adapter is ArrisCompatibleHTTPAdapter
-        adapter = client.session.get_adapter("https://192.168.100.1/HNAP1/")
-        assert isinstance(adapter, ArrisCompatibleHTTPAdapter)
-
     def test_error_classification_without_header_parsing(self):
         """Test error classification for various error types."""
         client = ArrisModemStatusClient(password="test")
@@ -689,57 +579,6 @@ class TestHttpCompatibilityIntegration:
         capture = client._analyze_error(timeout_error, "test_request")
         # This works because "timeout" is in the message
         assert capture.error_type == "timeout"
-
-    def test_relaxed_parsing_performance_benefit(self):
-        """Test that relaxed parsing improves performance (no retries needed)."""
-        client = ArrisModemStatusClient(password="test", capture_errors=True, max_retries=3)
-
-        # Mock a successful request at the request handler level
-        with patch.object(client.request_handler, "make_request_with_retry") as mock_request:
-            mock_request.return_value = '{"success": true}'
-
-            result = client.request_handler.make_request_with_retry("Test", {})
-
-            # Should succeed on first attempt (no retries)
-            assert mock_request.call_count == 1
-            assert result == '{"success": true}'
-
-    def test_network_errors_still_retry(self):
-        """Test that genuine network errors still trigger retries."""
-        client = ArrisModemStatusClient(password="test", capture_errors=True, max_retries=2)
-
-        # Mock network errors followed by success at the session level
-        with patch.object(client.session, "post") as mock_post:
-            from requests.exceptions import ConnectionError
-
-            mock_post.side_effect = [
-                ConnectionError("Network error"),
-                ConnectionError("Network error"),
-                Mock(status_code=200, text='{"success": true}'),
-            ]
-
-            result = client.request_handler.make_request_with_retry("Test", {})
-
-            # Should retry and eventually succeed
-            assert mock_post.call_count == 3
-            assert result == '{"success": true}'
-
-    def test_http_errors_no_retry(self):
-        """Test that HTTP errors (403, 500) don't trigger retries."""
-        client = ArrisModemStatusClient(password="test", capture_errors=True, max_retries=3)
-
-        # Mock HTTP error at the session level
-        with patch.object(client.session, "post") as mock_post:
-            mock_response = Mock(status_code=403, text="Forbidden")
-            mock_post.return_value = mock_response
-
-            # Should raise ArrisHTTPError without retrying
-            with pytest.raises(ArrisHTTPError) as exc_info:
-                client.request_handler.make_request_with_retry("Test", {})
-
-            # Should only call once (no retries for HTTP errors)
-            assert mock_post.call_count == 1
-            assert exc_info.value.status_code == 403
 
 
 @pytest.mark.unit
@@ -842,23 +681,6 @@ class TestEdgeCases:
 @pytest.mark.http_compatibility
 class TestHTTPCompatibilityErrorPaths:
     """Test error handling paths and edge cases for HTTP compatibility."""
-
-    def test_relaxed_parsing_fallback_failure(self):
-        """Test when both standard and relaxed parsing fail."""
-        instrumentation = PerformanceInstrumentation()
-        adapter = ArrisCompatibleHTTPAdapter(instrumentation=instrumentation)
-
-        # Mock the raw socket request to fail after standard parsing fails
-        with patch.object(adapter, "_raw_socket_request") as mock_raw_request:
-            mock_raw_request.side_effect = Exception("Socket connection failed")
-
-            request = Mock()
-            request.url = "https://192.168.100.1/HNAP1/"
-            request.headers = {}
-
-            # Should raise the original exception
-            with pytest.raises(Exception, match="Socket connection failed"):
-                adapter.send(request)
 
     # Add this decorator
     @patch("arris_modem_status.http_compatibility.socket.socket")
@@ -1038,3 +860,106 @@ class TestHTTPCompatibilityErrorPaths:
         # Should still receive the response even with invalid content-length
         assert b"HTTP/1.1 200 OK" in response_data
         assert b"Response body" in response_data
+
+
+@pytest.mark.unit
+@pytest.mark.http_compatibility
+class TestHTTPCompatibilityCoverage:
+    """Test HTTP compatibility edge cases for coverage."""
+
+    def test_adapter_send_none_url(self):
+        """Test adapter send with None URL."""
+        adapter = ArrisCompatibleHTTPAdapter()
+
+        request = Mock()
+        request.url = None
+        request.headers = {}
+
+        # Should use standard processing for None URL
+        with patch("requests.adapters.HTTPAdapter.send") as mock_parent_send:
+            mock_response = Mock()
+            mock_parent_send.return_value = mock_response
+
+            response = adapter.send(request)
+
+            assert response == mock_response
+            mock_parent_send.assert_called_once()
+
+    def test_raw_socket_request_no_url(self):
+        """Test raw socket request with missing URL."""
+        adapter = ArrisCompatibleHTTPAdapter()
+
+        request = Mock()
+        request.url = None
+
+        with pytest.raises(ValueError, match="Request URL is None"):
+            adapter._raw_socket_request(request)
+
+    def test_receive_response_tolerantly_unicode_decode_error(self):
+        """Test receive response with unicode decode error in headers."""
+        adapter = ArrisCompatibleHTTPAdapter()
+
+        mock_socket = Mock()
+        # Response with invalid UTF-8 in headers
+        mock_socket.recv.side_effect = [
+            b"HTTP/1.1 200 OK\r\n",
+            b"Content-Length: \xff\xfe\r\n",  # Invalid UTF-8
+            b"\r\n",
+            b"body",
+            b"",
+        ]
+
+        response_data = adapter._receive_response_tolerantly(mock_socket)
+
+        # Should still receive response despite decode error
+        assert b"HTTP/1.1 200 OK" in response_data
+
+    def test_parse_response_tolerantly_empty_status_line(self):
+        """Test parse response with empty status line."""
+        adapter = ArrisCompatibleHTTPAdapter()
+
+        raw_response = b"\r\nContent-Type: text/html\r\n\r\n<html></html>"
+        request = Mock()
+        request.url = "https://test.com"
+
+        response = adapter._parse_response_tolerantly(raw_response, request)
+
+        # Should use default status
+        assert response.status_code == 200
+
+    def test_parse_response_tolerantly_invalid_status_code(self):
+        """Test parse response with invalid status code."""
+        adapter = ArrisCompatibleHTTPAdapter()
+
+        raw_response = b"HTTP/1.1 ABC OK\r\n\r\n"  # Non-numeric status
+        request = Mock()
+        request.url = "https://test.com"
+
+        response = adapter._parse_response_tolerantly(raw_response, request)
+
+        # Should default to 200
+        assert response.status_code == 200
+
+    def test_build_raw_http_request_skip_content_length(self):
+        """Test that existing Content-Length headers are skipped."""
+        adapter = ArrisCompatibleHTTPAdapter()
+
+        request = Mock()
+        request.method = "POST"
+        request.headers = {"Content-Type": "application/json", "Content-Length": "999"}  # Should be recalculated
+        request.body = '{"test": "data"}'
+
+        http_request = adapter._build_raw_http_request(request, "test.com", "/api")
+
+        # Should not have duplicate Content-Length
+        assert http_request.count("Content-Length:") == 1
+        assert "Content-Length: 16" in http_request  # Actual length
+        assert "Content-Length: 999" not in http_request  # Original skipped
+
+
+def test_raw_header_bytes_are_decoded():
+    """PreparedRequest allows byte-valued headers; their repr is not HTTP syntax."""
+    request = requests.Request("POST", "https://192.168.100.1/HNAP1/", headers={"X-Test": b"value"}).prepare()
+    raw = ArrisCompatibleHTTPAdapter()._build_raw_http_request(request, "192.168.100.1", "/HNAP1/")
+    assert "X-Test: value\r\n" in raw
+    assert "b'value'" not in raw

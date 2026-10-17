@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Monsterray fork
+
+- Support both reviewed Flint 2 GUI asset versions while rejecting unknown or
+  modified bundles before login; include safe RPC phase/code diagnostics.
+- Add a shell-free LuCI settings inventory with credential redaction, preserved
+  auth-policy flags, and partial-capture handling for optional metadata denial.
+
+- Match browser HNAP login signatures/cookies, support explicit MD5/SHA256, and
+  use standard HTTP with browser-style headers by default.
+- Preserve literal Unicode passwords and significant spaces; redact authentication
+  response bodies, session-cookie details, and command-line secrets from diagnostics.
+- Prevent login retries, redirect replays, and implicit reauthentication after
+  rejection or an uncertain login; stop status batches on connection/session failure.
+- Add bounded monitoring, one-request channels-only sampling, offline browser-HAR
+  comparison, and a cited cross-repository improvement plan.
+- Fix remaining type errors and keep automated tests offline with enforced network guards.
+- Reject failed challenge outcomes before submitting credentials, preserve wrapped
+  event logs, and report the timeout actually used by CLI requests.
+- Include shared fixtures and protocol vectors in source distributions; validate
+  wheel/source metadata and test the source archive in CI.
+- Add explicit LAN-interface selection for modem requests and connectivity checks
+  after tracing connection timeouts to a VPN route; verify one live S33v2 sample.
+- Read S33v2 uptime from connection info and internet status from device status,
+  and parse its days/hours/minutes/seconds uptime notation.
+- Reach 99.76% combined coverage and 100% line coverage with offline tests; raise
+  the required coverage gate to 99% without adding exclusions.
+- Fix public log retrieval and ordering, exact channel lock checks, empty-message
+  status timeout retries, raised HTTP authentication denials, and malformed
+  metadata/HAR handling discovered by the expanded tests.
+
+- Consolidate 495 offline cases into 412 across 18 focused files; remove unused
+  helpers and duplicate/mock-only checks while retaining 100% line coverage.
+- Fix missing-password handling when CLI stdout has no file descriptor, and
+  restore logging between tests so captured streams do not leak across cases.
+- Add optional Flint 2 GUI/LuCI status collectors, encrypted credentials backed by
+  macOS Keychain, and finite router-origin HTTPS benchmarks over LuCI or SSH.
+  Pin server identities before login, preserve literal password punctuation,
+  and document measured setup observations separately from pending live tests.
+- Require patched HTTP dependencies for the optional router tools (Python 3.10+)
+  and patched pytest on modern Python; remove the unused asyncio test plugin
+  whose older versions failed collection with pytest 9.
+
 ## [1.0.3] - 2025-10-17
 
 ## [1.0.2] - 2025-08-04

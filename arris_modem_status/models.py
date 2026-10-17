@@ -698,7 +698,7 @@ class ChannelInfo:
         Returns:
             True if channel lock_status indicates a locked, operational state
         """
-        return "Locked" in self.lock_status
+        return self.lock_status.strip().casefold() == "locked"
 
     def has_errors(self) -> bool:
         """

@@ -12,6 +12,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Optional
 
+import requests
+
 from arris_modem_status.client.auth import HNAPAuthenticator
 from arris_modem_status.client.error_handler import ErrorAnalyzer
 from arris_modem_status.client.http import HNAPRequestHandler
@@ -117,6 +119,9 @@ class ArrisModemStatusClient:
         capture_errors: bool = True,
         timeout: tuple = (3, 12),
         enable_instrumentation: bool = True,
+        hmac_algorithm: str = "sha256",
+        relaxed_http: bool = False,
+        network_interface: Optional[str] = None,
     ):
         """
         Initialize the Arris modem client with HTTP compatibility and instrumentation.
@@ -134,6 +139,9 @@ class ArrisModemStatusClient:
             capture_errors: Whether to capture error details for analysis (default: True)
             timeout: (connect_timeout, read_timeout) in seconds (default: (3, 12))
             enable_instrumentation: Enable detailed performance instrumentation (default: True)
+            hmac_algorithm: Firmware HNAP hash algorithm (sha256 or md5)
+            relaxed_http: Opt into custom raw-socket HTTP parsing (default: False)
+            network_interface: Explicit LAN interface for modem sockets, leaving system routes unchanged
         """
         self.host = host
         self.port = port
@@ -147,15 +155,28 @@ class ArrisModemStatusClient:
         self.capture_errors = capture_errors
         self.timeout = timeout
         self.enable_instrumentation = enable_instrumentation
+        self.relaxed_http = relaxed_http
+        self._authentication_blocked = False
 
         # Initialize components
-        self.authenticator = HNAPAuthenticator(username, password)
+        self.authenticator = HNAPAuthenticator(username, password, hmac_algorithm)
         self.error_analyzer = ErrorAnalyzer(capture_errors)
         self.parser = HNAPResponseParser()
         self.instrumentation = PerformanceInstrumentation() if enable_instrumentation else None
 
         # Configure HTTP session with relaxed parsing for HNAP endpoints
-        self.session = create_arris_compatible_session(self.instrumentation)
+        self.session = create_arris_compatible_session(
+            self.instrumentation, relaxed_http=relaxed_http, network_interface=network_interface
+        )
+        origin = f"https://{host}" + (f":{port}" if port != 443 else "")
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json, text/plain, */*",
+                "Origin": origin,
+                "X-Requested-With": "XMLHttpRequest",
+            }
+        )
 
         # Initialize request handler
         self.request_handler = HNAPRequestHandler(
@@ -170,7 +191,7 @@ class ArrisModemStatusClient:
         mode_str = "concurrent" if concurrent else "serial"
         logger.info(f"🛡️ ArrisModemStatusClient v1.0.0 initialized for {host}:{port}")
         logger.info(f"🔧 Mode: {mode_str}, Workers: {self.max_workers}, Retries: {max_retries}")
-        logger.info("🔧 Using relaxed HTTP parsing for HNAP endpoints")
+        logger.info("🔧 HTTP transport: %s", "relaxed" if relaxed_http else "standard")
         if not concurrent:
             logger.info("📌 Using serial mode for maximum compatibility (recommended)")
         else:
@@ -230,11 +251,34 @@ class ArrisModemStatusClient:
             ArrisConnectionError: When connection to modem fails
             ArrisTimeoutError: When timeout occurs during authentication
         """
+        if self._authentication_blocked:
+            raise ArrisAuthenticationError(
+                "Authentication is blocked after rejection or uncertain login; check the modem before creating a new client"
+            )
+        login_attempted = False
+        start_time = time.time()
         try:
+            self.authenticated = False
+            self.authenticator.last_login_result = None
+            self.private_key = None
+            self.uid_cookie = None
+            self.session.cookies.clear()
             logger.info("🔐 Starting authentication...")
             start_time = (
                 self.instrumentation.start_timer("authentication_complete") if self.instrumentation else time.time()
             )
+
+            # Seed browser cookies before the challenge; no credentials are sent.
+            try:
+                login_page = self.session.get(
+                    f"{self.base_url}/Login.html", timeout=self.timeout, allow_redirects=False
+                )
+            except requests.exceptions.Timeout as error:
+                raise ArrisTimeoutError("Modem login page timed out; no login was attempted") from error
+            except requests.exceptions.RequestException as error:
+                raise ArrisConnectionError("Could not reach modem login page; no login was attempted") from error
+            if login_page.status_code != 200:
+                raise ArrisHTTPError("Could not load modem login page", status_code=login_page.status_code)
 
             # Step 1: Request challenge
             challenge_start = (
@@ -292,9 +336,16 @@ class ArrisModemStatusClient:
             )
 
             login_request = self.authenticator.build_login_request(login_password)
-            login_headers = {"Cookie": f"uid={self.authenticator.uid_cookie}"} if self.authenticator.uid_cookie else {}
-
-            login_response = self.request_handler.make_request_with_retry("Login", login_request, login_headers)
+            login_auth_token = self.authenticator.generate_auth_token("Login")
+            login_attempted = True
+            login_response = self.request_handler.make_request_with_retry(
+                "Login",
+                login_request,
+                auth_token=login_auth_token,
+                authenticated=True,
+                uid_cookie=self.uid_cookie,
+                private_key=self.private_key,
+            )
 
             if login_response and self.authenticator.validate_login_response(login_response):
                 auth_time = time.time() - start_time
@@ -307,7 +358,7 @@ class ArrisModemStatusClient:
 
                 return True
 
-            logger.error("Authentication failed after retries")
+            logger.error("Modem rejected login; no further login attempt will be made by this call")
 
             if self.instrumentation:
                 self.instrumentation.record_timing(
@@ -328,21 +379,25 @@ class ArrisModemStatusClient:
                 details={
                     "phase": "login",
                     "username": self.username,
-                    "response": login_response[:200] if login_response else "None",
+                    "login_result": self.authenticator.last_login_result,
                 },
             )
 
+        except (ArrisAuthenticationError, ArrisParsingError):
+            self._block_authentication()
+            raise
         except (
-            ArrisAuthenticationError,
             ArrisConnectionError,
             ArrisTimeoutError,
             ArrisHTTPError,
-            ArrisParsingError,
         ) as e:
+            if login_attempted:
+                self._block_authentication()
             # Re-raise our custom exceptions
             raise e
         except Exception as e:
-            logger.error(f"Authentication error: {e}")
+            self._block_authentication()
+            logger.error("Authentication error: %s", type(e).__name__)
 
             if self.instrumentation:
                 self.instrumentation.record_timing(
@@ -354,13 +409,17 @@ class ArrisModemStatusClient:
 
             # Wrap unexpected errors
             raise ArrisAuthenticationError(
-                f"Unexpected error during authentication: {e!s}",
-                details={"error_type": type(e).__name__, "error": str(e)},
+                "Unexpected error during authentication",
+                details={"error_type": type(e).__name__},
             ) from e
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self, include_logs: bool = True, channels_only: bool = False) -> dict[str, Any]:
         """
         Retrieve comprehensive modem status using relaxed HTTP parsing.
+
+        Args:
+            include_logs: Fetch event logs along with status (default: True)
+            channels_only: Fetch both channel directions in one request, omitting metadata and logs
 
         Returns:
             Dictionary containing modem status information
@@ -401,6 +460,7 @@ class ArrisModemStatusClient:
                     {
                         "GetMultipleHNAPs": {
                             "GetInternetConnectionStatus": "",
+                            "GetArrisDeviceStatus": "",
                             "GetArrisRegisterInfo": "",
                             "GetArrisRegisterStatus": "",
                         }
@@ -422,6 +482,10 @@ class ArrisModemStatusClient:
             ]
 
             responses: dict[str, str] = {}
+            if channels_only:
+                request_definitions = [item for item in request_definitions if item[0] == "channel_info"]
+            elif not include_logs:
+                request_definitions = [item for item in request_definitions if item[0] != "system_log"]
             successful_requests = 0
 
             if self.concurrent:
@@ -601,7 +665,8 @@ class ArrisModemStatusClient:
                 # Response is directly the log response
                 hnaps_response = data
 
-            log_entries = self.parser._parse_logs(hnaps_response)
+            log_response = hnaps_response.get("GetCustomerStatusLogResponse", {})
+            log_entries = self.parser._parse_logs(log_response.get("CustomerStatusLogList", ""))
 
             if self.instrumentation:
                 self.instrumentation.record_timing("log_parsing", parsing_start, success=True)
@@ -619,6 +684,7 @@ class ArrisModemStatusClient:
             ArrisConnectionError,
             ArrisTimeoutError,
             ArrisHTTPError,
+            ArrisOperationError,
         ) as e:
             # Re-raise our custom exceptions
             raise e
@@ -671,6 +737,10 @@ class ArrisModemStatusClient:
                         logger.debug(f"✅ {req_name} completed successfully")
                     else:
                         logger.warning(f"⚠️ {req_name} failed after retries")
+                except (ArrisAuthenticationError, ArrisConnectionError, ArrisTimeoutError):
+                    for pending in future_to_name:
+                        pending.cancel()
+                    raise
                 except Exception as e:
                     logger.error(f"❌ {req_name} failed with exception: {e}")
                     # Analyze the error
@@ -710,6 +780,8 @@ class ArrisModemStatusClient:
                 # Small delay between serial requests to avoid overwhelming the modem
                 time.sleep(0.1)
 
+            except (ArrisAuthenticationError, ArrisConnectionError, ArrisTimeoutError):
+                raise
             except Exception as e:
                 logger.error(f"❌ {req_name} failed with exception: {e}")
                 # Analyze the error
@@ -722,16 +794,32 @@ class ArrisModemStatusClient:
 
     def _make_authenticated_request(self, soap_action: str, request_body: dict) -> Optional[str]:
         """Make authenticated HNAP request."""
+        if self._authentication_blocked:
+            raise ArrisAuthenticationError(
+                "Authentication is blocked after rejection or uncertain login; check the modem before creating a new client"
+            )
         auth_token = self.authenticator.generate_auth_token(soap_action)
 
-        return self.request_handler.make_request_with_retry(
-            soap_action,
-            request_body,
-            auth_token=auth_token,
-            authenticated=self.authenticated,
-            uid_cookie=self.uid_cookie,
-            private_key=self.private_key,
-        )
+        try:
+            return self.request_handler.make_request_with_retry(
+                soap_action,
+                request_body,
+                auth_token=auth_token,
+                authenticated=self.authenticated,
+                uid_cookie=self.uid_cookie,
+                private_key=self.private_key,
+            )
+        except ArrisAuthenticationError:
+            self._block_authentication()
+            raise
+
+    def _block_authentication(self) -> None:
+        """Discard rejected or uncertain session secrets and prevent automatic new logins."""
+        self._authentication_blocked = True
+        self.authenticated = False
+        self.private_key = None
+        self.uid_cookie = None
+        self.session.cookies.clear()
 
     def _add_metadata(
         self, parsed_data: dict, successful_requests: int, total_requests: int, start_time: float
@@ -817,7 +905,7 @@ class ArrisModemStatusClient:
             # Enhanced validation
             channel_quality = {}
             if downstream_count > 0:
-                downstream_locked = sum(1 for ch in status["downstream_channels"] if "Locked" in ch.lock_status)
+                downstream_locked = sum(1 for ch in status["downstream_channels"] if ch.is_locked())
                 downstream_modulations = {
                     ch.modulation for ch in status["downstream_channels"] if ch.modulation != "Unknown"
                 }
@@ -830,7 +918,7 @@ class ArrisModemStatusClient:
                 }
 
             if upstream_count > 0:
-                upstream_locked = sum(1 for ch in status["upstream_channels"] if "Locked" in ch.lock_status)
+                upstream_locked = sum(1 for ch in status["upstream_channels"] if ch.is_locked())
                 upstream_modulations = {
                     ch.modulation for ch in status["upstream_channels"] if ch.modulation != "Unknown"
                 }

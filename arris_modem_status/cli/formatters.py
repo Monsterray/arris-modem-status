@@ -212,8 +212,8 @@ def format_json_output(
     # Get optimal timeouts for metadata
     from .connectivity import get_optimal_timeouts
 
-    connect_timeout, read_timeout = get_optimal_timeouts(args.host)
-    final_timeout = (connect_timeout, min(args.timeout, read_timeout))
+    connect_timeout, _ = get_optimal_timeouts(args.host)
+    final_timeout = (min(connect_timeout, args.timeout), args.timeout)
 
     # Add metadata
     json_output["query_timestamp"] = datetime.now().isoformat()
