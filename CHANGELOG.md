@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helpers and duplicate/mock-only checks while retaining 100% line coverage.
 - Fix missing-password handling when CLI stdout has no file descriptor, and
   restore logging between tests so captured streams do not leak across cases.
+- Add optional Flint 2 GUI/LuCI status collectors, encrypted credentials backed by
+  macOS Keychain, and finite router-origin HTTPS benchmarks over LuCI or SSH.
+  Pin server identities before login, preserve literal password punctuation,
+  and document measured setup observations separately from pending live tests.
+- Require patched HTTP dependencies for the optional router tools (Python 3.10+)
+  and patched pytest on modern Python; remove the unused asyncio test plugin
+  whose older versions failed collection with pytest 9.
 
 ## [1.0.3] - 2025-10-17
 

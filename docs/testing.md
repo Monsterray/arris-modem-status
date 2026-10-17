@@ -1,5 +1,32 @@
 # Validation: 2026-10-15
 
+## Flint 2 additions: 2026-10-16
+
+The suite now passes **442 cases** on Python 3.10.22 and 3.14.7 with pytest 9.1.1: the existing
+412 modem cases plus 30 focused optional-router cases. The modem package retains
+100% line and 99.76% combined coverage; that coverage measurement does not include
+the checkout's router scripts. Their tests cover encrypted storage, hidden input,
+firmware-specific GUI hashes, LuCI sessions/command calls, denial handling,
+redaction, and bounded benchmark construction. All TCP/DNS remain blocked in pytest.
+Ruff, Black, mypy, and the expanded Bandit check pass with no medium/high findings.
+One reviewed Bandit suppression marks the intentional SSH command execution;
+commands are fixed internally and dynamic device names are validated and quoted.
+
+The Mac's exact router runtime dependency set passes `pip-audit` without exceptions.
+Auditing the old Python 3.9 environment identified Requests/urllib3/pytest advisories
+whose fixes require Python 3.10+. The optional `flint2` extra now requires patched
+HTTP versions and therefore Python 3.10+; modern test dependencies also require
+patched pytest. CI retains modem-only Python 3.9 checks, skips optional router tests
+there, and supplies a fresh private pytest base directory. The earlier 30 router
+cases ran on 3.9 before those dependency minimums were tightened.
+The pytest upgrade exposed an unused asyncio plugin resolving to an incompatible
+older release. There are no async tests or runtime code, so the plugin and its
+configuration were removed rather than adding a new compatibility constraint.
+
+The environment matrix below records the earlier modem-only run. The router
+tools have not been authenticated against the hardware yet. See
+[Flint 2 testing](flint2-testing.md) for the setup observations and live-test limits.
+
 ## Completed checks
 
 | Environment | Result |

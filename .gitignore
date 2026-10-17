@@ -80,3 +80,8 @@ build/
 requirements.txt
 requirements-dev.txt
 interrogate_badge.svg
+
+# Local router credentials and private diagnostic captures
+.secrets/
+router-data/
+modem-*.json

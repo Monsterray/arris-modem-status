@@ -35,6 +35,18 @@ compatibility matrix, package validation, and reproducible regression commands.
 The offline suite reaches 99.76% combined coverage (100% line coverage), and the
 configured gate requires at least 99%; no new coverage exclusions were introduced.
 
+### Flint 2 router tools
+
+Optional checkout tools collect status from the GL.iNet web panel and LuCI, and
+run finite HTTPS transfer benchmarks on the router through LuCI or optional SSH.
+Credentials are entered locally, encrypted in `.secrets/flint2/`, and unlocked
+using a separate key in macOS Keychain. Status reports go to private, Git-ignored
+`router-data/` files. These tools do not change router settings or install packages.
+
+See [Flint 2 setup, credentials, and baseline testing](docs/flint2-testing.md)
+for commands, certificate verification, bandwidth use, and remaining live checks.
+Install their optional dependencies with `python -m pip install -e '.[flint2]'`.
+
 ### Conservative S33v2 sampling
 
 Open `https://192.168.100.1/Login.html` from a computer behind your router. Confirm
