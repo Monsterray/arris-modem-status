@@ -23,8 +23,16 @@ from scripts.flint2_credentials import (
 
 GL_READS = (("system", "get_info"), ("system", "get_status"))
 LUCI_READS = (("system", "board"), ("system", "info"), ("network.interface", "dump"), ("luci-rpc", "getNetworkDevices"))
-LOGIN_BUNDLE_SHA256 = "bb2f6ef79c8fc95f6fc18bdf4d43883aea318d8b39a29d549583acbb079a235d"
-APP_BUNDLE_SHA256 = "7f932af072e305dbeca23bd33a941fa4cd1e556c46421bf9aebc5fb479162e3a"
+GUI_ASSETS = {
+    "/js/app.bfe03abe.js": (
+        "7f932af072e305dbeca23bd33a941fa4cd1e556c46421bf9aebc5fb479162e3a",
+        "bb2f6ef79c8fc95f6fc18bdf4d43883aea318d8b39a29d549583acbb079a235d",
+    ),
+    "/js/app.ab987315.js": (
+        "a27c83299c4119cd91f9e00643712de574fe30010cea89fa053bcd7957795a24",
+        "daf28cab39b96b3baf6067ea5bd5615c215741e36514aa0e993583768d86e72a",
+    ),
+}
 SENSITIVE = re.compile(
     r"pass|secret|token|session|cookie|credential|authorization|private|(?:^|_)key|^sid$|hash|nonce|salt", re.I
 )
@@ -140,7 +148,9 @@ class Collector:
             code = data["error"].get("code") if isinstance(data["error"], dict) else None
             if code == -32601:
                 raise UnsupportedError("Status method is unavailable on this firmware.")
-            raise SafeError("Router API denied or failed the request; stopped without reauthentication.")
+            phase = method if method in ("challenge", "login", "call") else "request"
+            safe_code = str(code) if type(code) is int else "unknown"
+            raise SafeError(f"Router API rejected {phase} (code {safe_code}); stopped without reauthentication.")
         if "result" not in data:
             raise SafeError("Router API response has no result.")
         result = data["result"]
@@ -162,10 +172,16 @@ class Collector:
         page = self.request("GET", "/")
         if page.status_code != 200:
             raise SafeError("GUI public page is unavailable; no credential POST was made.")
-        # Binding these verified artifacts prevents treating another firmware's login as this protocol.
+        scripts = set(re.findall(r'<script\b[^>]*\bsrc=["\x27]([^"\x27]+)', page.text))
+        known = [path for path in GUI_ASSETS if path in scripts]
+        if len(known) != 1:
+            raise SafeError("GUI login assets differ from the verified firmware; inspect them before login.")
+        app_path = known[0]
+        app_hash, login_hash_value = GUI_ASSETS[app_path]
+        # A reviewed app/login pair is required; an unknown firmware still stops before login.
         for path, expected in (
-            ("/js/app.bfe03abe.js", APP_BUNDLE_SHA256),
-            ("/views/gl-sdk4-ui-login.common.js", LOGIN_BUNDLE_SHA256),
+            (app_path, app_hash),
+            ("/views/gl-sdk4-ui-login.common.js", login_hash_value),
         ):
             response = self.request("GET", path)
             if response.status_code != 200 or hashlib.sha256(response.content).hexdigest() != expected:

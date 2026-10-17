@@ -1,5 +1,21 @@
 # Validation: 2026-10-15
 
+## Read-only router validation: 2026-10-17
+
+446 offline cases pass on Python 3.10.22 and 3.14.7; the modem coverage gate is
+unchanged. The additions verify both reviewed GUI asset versions, rejection of
+unknown assets before login, safe API phase/code errors, shell-free settings
+capture, preservation of auth-policy flags while removing credentials, and keeping
+settings when an optional metadata read is denied.
+
+Authenticated LuCI status reads and a broad UCI settings capture succeeded on the
+hardware. Shell/file permissions are separate and some optional reads were denied.
+GUI asset compatibility was updated after static review of the newly served
+public bundles; authenticated GUI and SSH collection remain unconfirmed pending
+local credential verification. Private captures and the configuration assessment
+stay in ignored `router-data/`, outside Git and distributions. No setting changes,
+speed tests, package installations, or modem operations were performed in this pass.
+
 ## Flint 2 additions: 2026-10-16
 
 The suite now passes **442 cases** on Python 3.10.22 and 3.14.7 with pytest 9.1.1: the existing

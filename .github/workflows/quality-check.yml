@@ -64,8 +64,8 @@ jobs:
     - name: Run Bandit security check
       run: |
         bandit --version
-        bandit -r arris_modem_status scripts/flint2_credentials.py scripts/flint2_collect.py scripts/flint2_speedtest.py -ll -f json -o bandit-report.json
-        bandit -r arris_modem_status scripts/flint2_credentials.py scripts/flint2_collect.py scripts/flint2_speedtest.py -ll
+        bandit -r arris_modem_status scripts/flint2_credentials.py scripts/flint2_collect.py scripts/flint2_speedtest.py scripts/flint2_audit.py -ll -f json -o bandit-report.json
+        bandit -r arris_modem_status scripts/flint2_credentials.py scripts/flint2_collect.py scripts/flint2_speedtest.py scripts/flint2_audit.py -ll
     - name: Check docstring coverage
       run: |
         interrogate --version

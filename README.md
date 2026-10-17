@@ -46,6 +46,8 @@ using a separate key in macOS Keychain. Status reports go to private, Git-ignore
 See [Flint 2 setup, credentials, and baseline testing](docs/flint2-testing.md)
 for commands, certificate verification, bandwidth use, and remaining live checks.
 Install their optional dependencies with `python -m pip install -e '.[flint2]'`.
+`python -m scripts.flint2_audit` captures a redacted settings inventory through
+LuCI without SSH or shell execution.
 
 ### Conservative S33v2 sampling
 

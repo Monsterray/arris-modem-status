@@ -127,6 +127,27 @@ like the credential files. Treat them as private because they can contain networ
 addresses, device names, hardware identifiers, and counters. Console output gives
 the saved path, rather than dumping the response.
 
+## Capture installed settings without a shell
+
+```bash
+python -m scripts.flint2_audit
+```
+
+This uses one LuCI login to list configuration filenames and read their UCI
+values, together with the usual status snapshot. It never invokes a shell,
+changes settings, or starts a speed test. Credentials are redacted before writing
+an owner-only `router-data/settings-*.json` report. Authentication policy flags
+such as `PasswordAuth=on` remain visible, while password values are removed.
+This is a settings inventory for review, not a restorable backup containing keys.
+
+The report's `complete` field refers to completing its configuration inventory;
+the `unavailable` section records optional reads that could not be collected.
+An optional denied firmware-file read does not discard a successful settings
+capture. Command execution is a separate permission and may be denied even when
+status and UCI reads work. The current GUI adapter recognizes two reviewed asset
+pairs selected from the public page; unknown paths or modified hashes still stop
+before login. RPC rejections show only the phase and numeric code, never raw bodies.
+
 ## Router-origin speed tests
 
 The default transport reuses one authenticated LuCI session and its existing

@@ -14,6 +14,7 @@ pytest.importorskip("passlib", reason="Install the flint2 extra for router-tool 
 
 from cryptography.fernet import Fernet
 
+from scripts import flint2_audit as audit
 from scripts import flint2_collect as collect
 from scripts import flint2_credentials as credentials
 from scripts import flint2_speedtest as speed
@@ -157,10 +158,12 @@ def test_unknown_gui_hash_variants_are_rejected(change):
         collect.login_hash("café", "root", {"alg": 5, "salt": "testsalt", "nonce": "nonce"})
 
 
-def test_gui_flow_pins_tls_reads_allowlist_and_redacts_secrets(profile, monkeypatch):
+@pytest.mark.parametrize("app_path", ["/js/app.bfe03abe.js", "/js/app.ab987315.js"])
+def test_gui_flow_pins_tls_reads_allowlist_and_redacts_secrets(profile, monkeypatch, app_path):
     app, login = b"synthetic-app", b"synthetic-login"
-    monkeypatch.setattr(collect, "APP_BUNDLE_SHA256", hashlib.sha256(app).hexdigest())
-    monkeypatch.setattr(collect, "LOGIN_BUNDLE_SHA256", hashlib.sha256(login).hexdigest())
+    monkeypatch.setitem(
+        collect.GUI_ASSETS, app_path, (hashlib.sha256(app).hexdigest(), hashlib.sha256(login).hexdigest())
+    )
     client = collect.Collector(profile)
     adapter = client.session.get_adapter(client.origin)
     assert adapter.poolmanager.connection_pool_kw["assert_fingerprint"] == profile["fingerprint"]
@@ -169,7 +172,7 @@ def test_gui_flow_pins_tls_reads_allowlist_and_redacts_secrets(profile, monkeypa
     sid = "S" * 32
     post = Mock(
         side_effect=[
-            reply(),
+            reply(text=f'<script src="{app_path}"></script>'),
             reply(content=app),
             reply(content=login),
             reply({"id": 1, "result": {"alg": 5, "salt": "testsalt", "nonce": "nonce"}}),
@@ -205,17 +208,21 @@ def test_gui_flow_pins_tls_reads_allowlist_and_redacts_secrets(profile, monkeypa
         with pytest.raises(credentials.SafeError, match="already"):
             client.authenticate_gui()
         assert post.call_count == 7
+        assert post.call_args_list[1].args[1] == client.origin + app_path
     finally:
         client.close()
 
 
-def test_gui_changed_assets_stop_before_any_credential_post(profile, monkeypatch):
+@pytest.mark.parametrize("app_path", ["/js/app.bfe03abe.js", "/js/app.unknown.js"])
+def test_gui_changed_assets_stop_before_any_credential_post(profile, monkeypatch, app_path):
     client = collect.Collector(profile)
-    request = Mock(side_effect=[reply(), reply(content=b"unknown firmware")])
+    request = Mock(side_effect=[reply(text=f'<script src="{app_path}"></script>'), reply(content=b"unknown firmware")])
     monkeypatch.setattr(client.session, "request", request)
     with pytest.raises(credentials.SafeError, match="differ"):
         client.authenticate_gui()
-    assert [call.args[0] for call in request.call_args_list] == ["GET", "GET"]
+    assert [call.args[0] for call in request.call_args_list] == (
+        ["GET", "GET"] if app_path in collect.GUI_ASSETS else ["GET"]
+    )
     client.close()
 
 
@@ -271,6 +278,10 @@ def test_cross_origin_redirect_and_rpc_ids_are_rejected(profile, monkeypatch):
     with pytest.raises(credentials.SafeError, match="ID"):
         client.rpc("/rpc", "challenge", {})
     assert request.call_count == 1
+    request.return_value = reply({"id": 2, "error": {"code": -32000, "message": PASSWORD}})
+    with pytest.raises(credentials.SafeError, match=r"rejected login \(code -32000\)") as failure:
+        client.rpc("/rpc", "login", {})
+    assert PASSWORD not in str(failure.value)
     client.close()
 
 
@@ -447,3 +458,49 @@ def test_speed_cli_defaults_to_luci_and_does_not_fall_back(profile, monkeypatch,
     ssh.assert_not_called()
     runner.close.assert_called_once()
     assert "denied" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("metadata_available", [True, False])
+def test_settings_capture_uses_only_reads_and_redacts_secrets_but_keeps_policy(metadata_available):
+    client = Mock(sid="ab" * 16, rpc_path="/ubus/", secrets=[PASSWORD])
+    client.read.return_value = {"uptime": 123}
+
+    def rpc(path, method, params, ubus=False):
+        assert path == "/ubus/"
+        assert method == "call"
+        assert ubus
+        _, module, operation, arguments = params
+        if (module, operation) == ("file", "read"):
+            if not metadata_available:
+                raise credentials.SafeError("Metadata denied")
+            return {"data": "version"}
+        if (module, operation) == ("file", "list"):
+            return {"entries": [{"name": "dropbear", "type": "file"}, {"name": "../shadow", "type": "file"}]}
+        assert (module, operation, arguments) == ("uci", "get", {"config": "dropbear"})
+        return {
+            "values": {
+                "server": {
+                    "PasswordAuth": "on",
+                    "RootPasswordAuth": "off",
+                    "password": PASSWORD,
+                    "psk": "hidden",
+                    "url": "https://user:secret@example.invalid",
+                    "note": PASSWORD,
+                }
+            }
+        }
+
+    client.rpc.side_effect = rpc
+    report = audit.capture(client)
+    assert report["complete"]
+    assert report["inventory"] == ["dropbear"]
+    assert bool(report["unavailable"]) is not metadata_available
+    policy = report["configuration"]["dropbear"]["values"]["server"]
+    assert policy["PasswordAuth"] == "on"
+    assert policy["RootPasswordAuth"] == "off"
+    serialized = json.dumps(report)
+    assert PASSWORD not in serialized
+    assert "hidden" not in serialized
+    assert "user:secret" not in serialized
+    client.authenticate_luci.assert_called_once()
+    assert audit.sanitize({"PasswordAuth": "not-a-flag-secret"}) == {"PasswordAuth": "<redacted>"}

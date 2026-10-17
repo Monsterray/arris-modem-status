@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Monsterray fork
 
+- Support both reviewed Flint 2 GUI asset versions while rejecting unknown or
+  modified bundles before login; include safe RPC phase/code diagnostics.
+- Add a shell-free LuCI settings inventory with credential redaction, preserved
+  auth-policy flags, and partial-capture handling for optional metadata denial.
+
 - Match browser HNAP login signatures/cookies, support explicit MD5/SHA256, and
   use standard HTTP with browser-style headers by default.
 - Preserve literal Unicode passwords and significant spaces; redact authentication
